@@ -1,0 +1,31 @@
+# CypherV6 - a legit client for Minecraft 26.3 (Forge)
+modLoader="javafml"
+loaderVersion="[66,)"
+license="All Rights Reserved"
+clientSideOnly=true
+
+[[mods]]
+modId="cypherv6"
+version="1.0.0"
+displayName="CypherV6"
+authors="CypherV6"
+description='''
+CypherV6 - a legit client for Minecraft 26.3.
+
+Press RIGHT SHIFT in game to open the click GUI.
+Client-side only: Custom FOV, Fullbright, Nametags, No Rain, FPS Booster and more.
+'''
+
+[[dependencies.cypherv6]]
+    modId="forge"
+    mandatory=true
+    versionRange="[66,)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.cypherv6]]
+    modId="minecraft"
+    mandatory=true
+    versionRange="[26.3,26.4,)"
+    ordering="NONE"
+    side="BOTH"

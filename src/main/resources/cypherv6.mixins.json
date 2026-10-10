@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "minVersion": "0.8.5",
+  "package": "com.cypherv6.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "LightmapExtractorMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
