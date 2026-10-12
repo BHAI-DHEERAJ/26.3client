@@ -1,5 +1,5 @@
 # CypherV6
-
+**this doesn't related to me its just a fork of a private client, which is discontinued**
 A **client-side** Minecraft client for **Minecraft 26.3** on **Forge** (`26.3-66.0.10`),
 in the style of a "legit cheat" client (LegitCheat / Meteor / Wurst feel): a click GUI
 with toggleable modules, keybinds, and `[CypherV6]` chat feedback.
