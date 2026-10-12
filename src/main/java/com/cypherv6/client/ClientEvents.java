@@ -14,7 +14,7 @@ import net.minecraftforge.client.event.InputEvent;
 import net.minecraftforge.client.event.RenderNameTagEvent;
 import net.minecraftforge.client.event.ViewportEvent;
 import net.minecraftforge.event.TickEvent;
-import org.lwjgl.glfw.GLFW;
+import com.mojang.blaze3d.platform.InputConstants;
 
 /**
  * Wires CypherV6 into the 26.3 Forge event bus and opens the click GUI on RIGHT SHIFT.
@@ -59,7 +59,7 @@ public final class ClientEvents {
     }
 
     private static void onKey(InputEvent.Key event) {
-        if (event.getAction() != GLFW.GLFW_PRESS) {
+        if (event.getAction() != InputConstants.PRESS) {
             return;
         }
         Minecraft minecraft = Minecraft.getInstance();
@@ -68,7 +68,7 @@ public final class ClientEvents {
             return;
         }
         int key = event.getKey();
-        if (key == GLFW.GLFW_KEY_RIGHT_SHIFT) {
+        if (key == InputConstants.KEY_RSHIFT) {
             minecraft.setScreenAndShow(new ClickGui());
             return;
         }

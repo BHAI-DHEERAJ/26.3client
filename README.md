@@ -98,7 +98,11 @@ MC 26.3 ships **unobfuscated** and uses a new render-graph pipeline:
 * Input uses `MouseButtonEvent` / `KeyEvent` records.
 * The current screen is `Minecraft#gui.screen()`; open with `Minecraft#setScreenAndShow`.
 * Client chat messages: `Minecraft#gui.hud.getChat().addClientSystemMessage(Component)`.
-* Keybinds are GLFW codes; `InputConstants.Type.KEYBOARD.getOrCreate(key).getDisplayName()`.
+* **Input moved off GLFW to SDL.** Keybinds are 26.3 **SDL scancodes**
+  (`InputConstants.KEY_A = 4` …), RIGHT SHIFT is `InputConstants.KEY_RSHIFT` (229), and a
+  key press is `InputConstants.PRESS` (1) / release `0` / repeat `-1`. There is **no
+  `org.lwjgl.glfw`** in 26.3. Names render via
+  `InputConstants.Type.KEYBOARD.getOrCreate(key).getDisplayName()`.
 * Entity reach is **attribute-based** (`Attributes.ENTITY_INTERACTION_RANGE` /
   `BLOCK_INTERACTION_RANGE`) — deliberately not modified here.
 * Fullbright is a Mixin into `LightmapRenderStateExtractor#extract` setting the

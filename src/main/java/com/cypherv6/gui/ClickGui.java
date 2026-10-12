@@ -13,7 +13,7 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
-import org.lwjgl.glfw.GLFW;
+import com.mojang.blaze3d.platform.InputConstants;
 
 import java.util.List;
 
@@ -291,7 +291,7 @@ public class ClickGui extends Screen {
             }
             return true;
         }
-        if (event.key() == GLFW.GLFW_KEY_RIGHT_SHIFT) {
+        if (event.key() == InputConstants.KEY_RSHIFT) {
             this.onClose();
             return true;
         }

@@ -17,12 +17,11 @@ Status of the Minecraft **26.3 Forge** client. Target: a polished "legit cheat" 
 
 ## In progress / needs verification
 
-- [ ] **Build is unverified.** `./gradlew build` had not finished cleanly when this was
-      written. The Mavenizer needed a **JDK 8** (auto-provision failed; a Temurin 8 tarball
-      was placed in the Mavenizer cache manually). Re-run `./gradlew build` and fix any
-      compile errors.
-- [ ] Verify the `LightmapExtractorMixin` actually injects (`extract` TAIL) — check the
-      mixin applies in `runClient` logs.
+- [x] **Build verified.** `./gradlew build` succeeds and produces
+      `build/libs/cypherv6-1.0.0.jar` (all 44 entries: classes, `mods.toml`,
+      `cypherv6.mixins.json`, `pack.mcmeta`).
+- [ ] `runClient` smoke test: GUI opens on RIGHT SHIFT, keybinds bind/toggle, chat messages
+      appear, fullbright mixin applies (check the log for the mixin).
 - [ ] Verify KillAura/TriggerBot attack timing and that rotations look natural.
 - [ ] Verify Tracer projection lines up with entities (currently a linear FOV approximation).
 
@@ -43,9 +42,18 @@ Status of the Minecraft **26.3 Forge** client. Target: a polished "legit cheat" 
 - No **Reach** module by design.
 - **2b2t** does not run 26.3, so this build will not connect there directly.
 - **Sodium** is Fabric/NeoForge only — no Forge 26.3 build (see README).
+- MC 26.3 **dropped GLFW for SDL**: there is no `org.lwjgl.glfw` on the classpath. Use
+  `com.mojang.blaze3d.platform.InputConstants` (`KEY_RSHIFT = 229`, `PRESS = 1`).
 - The Mavenizer needs JDK 8 on first build; if the auto-download fails, place
   `OpenJDK8U-jdk_x64_linux_hotspot_8u504b01.tar.gz` in
   `~/.gradle/caches/minecraftforge/forgegradle/mavenizer/caches/`.
+- First build also needs the **Gradle 9.7.1** wrapper distribution; if that cache is
+  missing the wrapper re-downloads it from `services.gradle.org`, which can time out —
+  fetch `gradle-9.7.1-bin.zip` from a mirror and unzip it into
+  `~/.gradle/wrapper/dists/gradle-9.7.1-bin/<hash>/` (plus a `.zip.ok` marker).
+- A **truncated jar** in the Mavenizer cache breaks `javac` with
+  `zip END header not found`. Delete the offending artifact so the Mavenizer re-fetches
+  it (verified: `mixin-0.8.7.jar`, sha1 `8ab114ac385e6dbdad5efafe28aba4df8120915f`).
 
 ## Handoff notes (for the next agents)
 

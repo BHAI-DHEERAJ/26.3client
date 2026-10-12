@@ -3,7 +3,7 @@ package com.cypherv6.util;
 import com.mojang.blaze3d.platform.InputConstants;
 
 /**
- * Turns raw GLFW key codes into readable names ("R", "F5", "None").
+ * Turns raw key codes (26.3 SDL scancodes) into readable names ("R", "F5", "None").
  */
 public final class KeyUtil {
 
