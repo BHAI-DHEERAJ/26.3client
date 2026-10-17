@@ -42,13 +42,19 @@ data class TelephonyFacts(
 internal object PhoneNumberFormatting {
     private val ALLOWED = Regex("^[+0-9][0-9+\\-() ]{2,24}$")
 
+    /** E.164 allows at most 15 digits; shorter values are usually service codes. */
+    private const val MIN_DIGITS = 6
+    private const val MAX_DIGITS = 15
+
     /**
      * Returns a cleaned phone number, or null when the value is blank, not
      * actually a number, or longer than a plausible phone number.
      */
     fun normalize(raw: String?): String? {
         val cleaned = raw
-            ?.replace(Regex("[\\p{Cntrl}]"), "")
+            // Control characters (newlines, tabs, NUL) become separators rather
+            // than being deleted, so digits are not silently joined together.
+            ?.replace(Regex("[\\p{Cntrl}]"), " ")
             ?.replace(Regex("\\s+"), " ")
             ?.trim()
             .orEmpty()
@@ -59,7 +65,9 @@ internal object PhoneNumberFormatting {
         if (!ALLOWED.matches(cleaned)) {
             return null
         }
-        if (cleaned.count { it.isDigit() } < 3) {
+
+        val digits = cleaned.count { it.isDigit() }
+        if (digits < MIN_DIGITS || digits > MAX_DIGITS) {
             return null
         }
         return cleaned

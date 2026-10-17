@@ -39,5 +39,16 @@ class PhoneNumberFormattingTest {
     fun rejectsTooFewDigits() {
         assertNull(PhoneNumberFormatting.normalize("+--"))
         assertNull(PhoneNumberFormatting.normalize("(+)"))
+        assertNull(PhoneNumberFormatting.normalize("112"))
+    }
+
+    @Test
+    fun acceptsShortestPlausibleNumber() {
+        assertEquals("123456", PhoneNumberFormatting.normalize("123456"))
+    }
+
+    @Test
+    fun rejectsNumbersLongerThanE164() {
+        assertNull(PhoneNumberFormatting.normalize("+1234567890123456"))
     }
 }
