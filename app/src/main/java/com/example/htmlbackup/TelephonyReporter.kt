@@ -140,13 +140,8 @@ class TelephonyReporter(private val context: Context) {
         )
     }
 
-    private fun readLine1Number(manager: TelephonyManager): String? {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            return manager.getPhoneNumber(0)
-        }
-        @Suppress("DEPRECATION")
-        return manager.line1Number
-    }
+    @Suppress("DEPRECATION")
+    private fun readLine1Number(manager: TelephonyManager): String? = manager.line1Number
 
     private fun hasPhoneNumberPermission(): Boolean =
         ContextCompat.checkSelfPermission(
@@ -164,7 +159,6 @@ class TelephonyReporter(private val context: Context) {
         TelephonyManager.SIM_STATE_PERM_DISABLED -> "permanently disabled"
         TelephonyManager.SIM_STATE_CARD_IO_ERROR -> "card I/O error"
         TelephonyManager.SIM_STATE_CARD_RESTRICTED -> "card restricted"
-        TelephonyManager.SIM_STATE_LOADED -> "loaded"
         TelephonyManager.SIM_STATE_UNKNOWN -> "unknown"
         else -> "unknown"
     }
