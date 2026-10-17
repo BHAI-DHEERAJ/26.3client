@@ -65,7 +65,14 @@ HTML_BACKUP_WEBHOOK_URL='https://discord.com/api/webhooks/<id>/<token>' ./gradle
 `WebhookConfig.kt` is used, `WebhookConfig.isConfigured` is false, and Send is
 disabled.
 
-For CI, add the URL as a GitHub Actions secret:
+For CI, add the URL as a GitHub Actions secret. Either use the helper script
+(the value is read with echo disabled and never written to disk):
+
+```bash
+./scripts/set-webhook-secret.sh
+```
+
+or add it in the GitHub UI:
 
 1. Open the repository on GitHub.
 2. **Settings -> Secrets and variables -> Actions -> New repository secret**.
