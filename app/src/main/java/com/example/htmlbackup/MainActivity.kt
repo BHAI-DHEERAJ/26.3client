@@ -265,7 +265,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showNoAccessDialog() {
-        val missing = PermissionSupport.missingPermissions(this)
+        val missing = PermissionSupport.missingPermissions(this, includeOptional = false)
         val canAskAgain = missing.any { permission ->
             shouldShowRequestPermissionRationale(permission)
         }
@@ -478,7 +478,45 @@ class MainActivity : AppCompatActivity() {
                 profile.packageName
             )
         )
-        append("\n\n")
+        append('\n')
+
+        if (ReportConfig.INCLUDE_NETWORK_INFO) {
+            append(
+                getString(
+                    R.string.consent_network,
+                    profile.network.transport,
+                    profile.network.localIp ?: getString(R.string.value_unavailable),
+                    if (profile.network.vpnActive) {
+                        getString(R.string.value_on)
+                    } else {
+                        getString(R.string.value_off)
+                    }
+                )
+            )
+            append('\n')
+        }
+
+        if (ReportConfig.INCLUDE_TELEPHONY_INFO) {
+            append(
+                getString(
+                    R.string.consent_carrier,
+                    profile.telephony.carrierName ?: getString(R.string.value_unknown),
+                    profile.telephony.simState
+                )
+            )
+            append('\n')
+            if (ReportConfig.INCLUDE_PHONE_NUMBER) {
+                append(
+                    getString(
+                        R.string.consent_phone_number,
+                        DeviceInfo.phoneNumberSummary(profile.telephony)
+                    )
+                )
+                append('\n')
+            }
+        }
+
+        append('\n')
 
         append(getString(R.string.consent_contents_heading))
         append('\n')

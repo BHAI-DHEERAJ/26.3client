@@ -36,7 +36,7 @@ loads disabled; it never receives personal data.
 
    | # | Message | Contents |
    |---|---------|----------|
-   | 1 | Device/app report | phone name, manufacturer, brand, model, Android version, SDK, security patch, build ID, codename, product, ABI, locale, time zone, app package/version, photo and contact counts |
+   | 1 | Device/app report | phone name, manufacturer, brand, model, Android version, SDK, security patch, build ID, codename, product, ABI, locale, time zone, connection type + local IP + VPN, carrier + SIM state + modem count + roaming, own phone number when permitted, app package/version, photo and contact counts |
    | 2 | Contacts (optional) | `contacts.json` with names, phone numbers, email addresses |
    | 3..n | Photos (one each) | each accessible JPEG/PNG/WebP image, streamed directly from the gallery |
 
@@ -113,17 +113,45 @@ and failure logs/annotations are additionally redacted before they are published
 When a real webhook is injected, the workflow does **not** publish the APK
 artifact by default because the APK would contain the secret.
 
-### Phone name and the info message
+### Device report contents
 
-The Discord message `username` and the `Device` field of the report come from
-`Settings.Global.DEVICE_NAME` (the name configured in Android Settings),
-falling back to `Build.MANUFACTURER + Build.MODEL`, then `Android phone`.
-`DeviceInfo.clean` collapses control/whitespace characters and caps names at
-80 characters.
+The first Discord message is a report built by `DeviceInfo`, `NetworkReporter`,
+and `TelephonyReporter`, and it is fully listed in the review dialog before
+sending.
 
-The report intentionally excludes identifiers that need privileged access
-(IMEI, serial number, Android ID). No SMS, call logs, or files outside the
-authorized image collection are read.
+| Category | Fields | Permission |
+|---|---|---|
+| Phone | device name (`Settings.Global.DEVICE_NAME`, else manufacturer + model) | none |
+| Hardware | manufacturer, brand, model, device codename, product, ABI | none |
+| OS | Android release, SDK level, security patch, build ID, locale, time zone | none |
+| App | package, version name, version code | none |
+| Network | connection type (Wi-Fi/mobile/Ethernet/VPN/offline), local IP, VPN active, metered | `ACCESS_NETWORK_STATE` |
+| SIM / carrier | carrier name, SIM state, modem count, roaming | none |
+| Phone number | this device's own number | `READ_PHONE_NUMBERS` (optional) |
+
+`ReportConfig.kt` has three switches (`INCLUDE_NETWORK_INFO`,
+`INCLUDE_TELEPHONY_INFO`, `INCLUDE_PHONE_NUMBER`) if you want to omit a section.
+Denying `READ_PHONE_NUMBERS` never blocks the photo/contact backup; the report
+simply says "not permitted".
+
+**Own phone number caveat:** `TelephonyManager` only returns a number if the
+carrier provisioned it on the SIM. Most modern SIMs return blank, and the report
+then says `not available (carrier did not provision it...)` rather than guessing.
+
+**Not collected, at any setting:**
+
+- SMS/MMS contents or message metadata (`READ_SMS` is reserved for the default
+  SMS app, Google Play forbids it for this use, and bulk message extraction is
+  the surveillance pattern this project refuses to build).
+- IMSI, ICCID, SIM serial number, subscriber IDs (persistent identity
+  identifiers, restricted by Android, unnecessary for a backup).
+- Wi-Fi SSID or anything requiring location permission.
+- Public IP (the receiver already sees the connection's public address; looking
+  it up would mean an extra third-party request).
+- Camera images or any scheduled capture.
+
+No privileged identifiers require root, and the app does not attempt to work
+around permission denials.
 
 ### Validation and secrecy
 
@@ -197,6 +225,13 @@ configuration).
 | 10-12 (API 29-32) | `READ_EXTERNAL_STORAGE`; MediaStore only; no broad filesystem access | `READ_CONTACTS` |
 | 13 (API 33) | `READ_MEDIA_IMAGES` | `READ_CONTACTS` |
 | 14-16 (API 34-35) | `READ_MEDIA_IMAGES` + `READ_MEDIA_VISUAL_USER_SELECTED` | `READ_CONTACTS` |
+
+The device report additionally uses two permissions:
+
+- `ACCESS_NETWORK_STATE` — normal permission, no prompt (connection type and
+  local IP).
+- `READ_PHONE_NUMBERS` — runtime permission, optional; only used to read this
+  device's own number for the report.
 
 - No `MANAGE_EXTERNAL_STORAGE`, no write-storage permission, no filesystem walks.
 - On Android 14+, selected-photos access sends exactly the items Android exposes
@@ -326,7 +361,8 @@ are the confirmed webhook messages.
 **CI build verified.** GitHub Actions ran on a clean `ubuntu-latest` runner for
 commit `c5eca3b`:
 
-- `./gradlew testDebugUnitTest` — **passed** (48 JVM unit tests).
+- `./gradlew testDebugUnitTest` — **passed** (all JVM unit tests, including the
+  network-address and phone-number formatting suites).
 - `./gradlew assembleDebug` — **passed**; the debug APK was assembled.
 - Run:
   https://github.com/BHAI-DHEERAJ/26.3client/actions/runs/39038664921

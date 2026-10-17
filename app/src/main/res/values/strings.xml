@@ -5,7 +5,9 @@
 
     <!-- First-launch explanation and permission context. -->
     <string name="intro_title">Before you start</string>
-    <string name="intro_message">HTML Backup sends the following to your configured Discord webhook:\n\n• one device and app report (phone name, Android version, manufacturer, model, build, ABI, locale, app version)\n• your contacts as a JSON file\n• your photos, one Discord message per image\n\nPHOTOS access is used to read images. On Android 14 and newer you can allow selected photos only. Without photo access, photos are not included.\n\nCONTACTS access is used to read contact records. Without it, contacts are not included.\n\nNothing is sent automatically: after device data is read, you review exactly what will be sent and must confirm. Files over Discord\'s 20 MiB default limit, and any image that fails to upload, are compressed automatically and sent as smaller JPEGs. An image that still cannot be delivered is skipped so the remaining items continue.</string>
+    <string name="intro_message">HTML Backup sends the following to your configured Discord webhook:\n\n• one device and app report: phone name, manufacturer, model, Android version, build, ABI, locale, time zone, app version, connection type with local IP, carrier and SIM state, and (if allowed) this device's own phone number\n• your contacts as a JSON file\n• your photos, one Discord message per image\n\nPHOTOS access is used to read images. On Android 14 and newer you can allow selected photos only. Without photo access, photos are not included.\n\nCONTACTS access is used to read contact records. Without it, contacts are not included.
+
+The report never includes SMS/MMS contents, IMSI, ICCID, SIM serial numbers, or camera images. Phone-number permission is optional: denying it only leaves that field out.\n\nNothing is sent automatically: after device data is read, you review exactly what will be sent and must confirm. Files over Discord\'s 20 MiB default limit, and any image that fails to upload, are compressed automatically and sent as smaller JPEGs. An image that still cannot be delivered is skipped so the remaining items continue.</string>
     <string name="intro_not_configured">No valid Discord webhook was configured for this build, so Send will stay disabled. You can still review the permission and preparation flow. Supply a webhook at build time (HTML_BACKUP_WEBHOOK_URL or the htmlBackup.webhookUrl Gradle property) and rebuild to enable sending.</string>
     <string name="action_continue">Continue</string>
     <string name="action_not_now">Not now</string>
@@ -41,6 +43,13 @@
     <string name="consent_device_model">• Device: %1$s %2$s</string>
     <string name="consent_device_android">• Android %1$s (SDK %2$d)</string>
     <string name="consent_device_app">• App: HTML Backup %1$s (versionCode %2$d, %3$s)</string>
+    <string name="consent_network">• Network: %1$s, local IP %2$s, VPN %3$s</string>
+    <string name="consent_carrier">• Carrier: %1$s, SIM %2$s</string>
+    <string name="consent_phone_number">• Phone number (this device): %1$s</string>
+    <string name="value_unavailable">unavailable</string>
+    <string name="value_unknown">unknown</string>
+    <string name="value_on">on</string>
+    <string name="value_off">off</string>
     <string name="consent_contents_heading">Data to send:</string>
     <string name="consent_photos">• Photos: %1$d files, %2$s (%3$s), one message each</string>
     <string name="consent_contacts">• Contacts: %1$d records in contacts.json</string>

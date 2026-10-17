@@ -79,7 +79,14 @@ object PermissionSupport {
      * photo access, the media permissions are deliberately not requested
      * again: the app uses exactly the photos Android has made accessible.
      */
-    fun missingPermissions(context: Context): List<String> {
+    /**
+     * @param includeOptional also ask for the phone-number permission used by
+     * the device report. Denying it never blocks the photo/contact backup.
+     */
+    fun missingPermissions(
+        context: Context,
+        includeOptional: Boolean = true
+    ): List<String> {
         val missing = mutableListOf<String>()
 
         if (!photoAccess(context).isGranted) {
@@ -87,6 +94,13 @@ object PermissionSupport {
         }
         if (!isGranted(context, Manifest.permission.READ_CONTACTS)) {
             missing += Manifest.permission.READ_CONTACTS
+        }
+        if (
+            includeOptional &&
+            ReportConfig.INCLUDE_PHONE_NUMBER &&
+            !isGranted(context, Manifest.permission.READ_PHONE_NUMBERS)
+        ) {
+            missing += Manifest.permission.READ_PHONE_NUMBERS
         }
 
         return missing

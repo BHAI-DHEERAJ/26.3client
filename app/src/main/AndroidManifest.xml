@@ -4,6 +4,12 @@
     <!-- The ZIP is uploaded over HTTPS to Discord. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Read-only connection facts for the device report (no location, no SSID). -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <!-- The device's own phone number for the report. Denying it is harmless. -->
+    <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
+
     <!-- Contacts are read only after the user grants this runtime permission. -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
 

@@ -33,6 +33,8 @@ data class DeviceProfile(
     val appVersionName: String,
     val appVersionCode: Long,
     val packageName: String,
+    val network: NetworkFacts,
+    val telephony: TelephonyFacts,
     val capturedAt: Instant
 )
 
@@ -93,6 +95,8 @@ object DeviceInfo {
                 .ifBlank { "unknown" },
             appVersionCode = packageInfo?.let { PackageInfoCompat.getLongVersionCode(it) } ?: 0L,
             packageName = context.packageName,
+            network = NetworkReporter(context).facts(),
+            telephony = TelephonyReporter(context).facts(),
             capturedAt = Instant.now()
         )
     }
@@ -110,6 +114,17 @@ object DeviceInfo {
             ?.take(maxLength)
             ?.trim()
             .orEmpty()
+
+    /** Human-readable description of the own-number result, never a guess. */
+    internal fun phoneNumberSummary(facts: TelephonyFacts): String = when (facts.phoneNumberStatus) {
+        TelephonyFacts.PhoneNumberStatus.INCLUDED -> facts.phoneNumber ?: "not available"
+        TelephonyFacts.PhoneNumberStatus.DISABLED -> "not included (disabled in ReportConfig)"
+        TelephonyFacts.PhoneNumberStatus.PERMISSION_DENIED -> "not permitted"
+        TelephonyFacts.PhoneNumberStatus.NOT_PROVISIONED ->
+            "not available (carrier did not provision it; most modern SIMs return blank)"
+
+        TelephonyFacts.PhoneNumberStatus.UNAVAILABLE -> "not available"
+    }
 
     private fun fieldValue(raw: String?): String =
         clean(raw, MAX_FIELD_LENGTH).ifBlank { "unknown" }
@@ -146,6 +161,27 @@ object DeviceInfo {
             put(field("ABI", profile.supportedAbis))
             put(field("Locale", profile.locale))
             put(field("Time zone", profile.timeZone))
+            put(
+                field(
+                    "Network",
+                    "${profile.network.transport}, VPN ${if (profile.network.vpnActive) "on" else "off"}"
+                )
+            )
+            put(field("Local IP", profile.network.localIp ?: "unavailable"))
+            put(field("Carrier", profile.telephony.carrierName ?: "unknown"))
+            put(
+                field(
+                    "SIM",
+                    buildString {
+                        append(profile.telephony.simState)
+                        profile.telephony.modemCount?.let { append(", $it modem(s)") }
+                        profile.telephony.roaming?.let {
+                            append(", roaming ${if (it) "yes" else "no"}")
+                        }
+                    }
+                )
+            )
+            put(field("Phone number", phoneNumberSummary(profile.telephony)))
             put(
                 field(
                     "App",
