@@ -21,9 +21,9 @@ loads disabled; it never receives personal data.
 
 1. The local `Hello World` WebView is displayed.
 2. A native dialog explains what the app can back up and why each permission is
-   requested. If `WebhookConfig.kt` still contains the placeholder, the dialog
-   adds a note and the Send button stays disabled; the permission and local
-   preparation flow can still be reviewed.
+   requested. If the build has no valid webhook (so `WebhookConfig.kt` falls
+   back to its placeholder), the dialog adds a note and the Send button stays
+   disabled; the permission and local preparation flow can still be reviewed.
 3. Missing permissions are requested using the correct runtime permission for
    the Android version. Photo access can be **full** or **selected photos only**
    on Android 14+.
@@ -380,13 +380,25 @@ is the confirmed webhook upload.
 
 **CI build verified.** The GitHub Actions workflow in
 `.github/workflows/android.yml` ran on a clean `ubuntu-latest` runner for commit
-`cf3aa94`:
+`de70d85`:
 
-- `./gradlew testDebugUnitTest` — **passed** (33 JVM unit tests).
-- `./gradlew assembleDebug` — **passed**; the debug APK was assembled and
-  uploaded as the `html-backup-debug-apk` workflow artifact.
+- `./gradlew testDebugUnitTest` — **passed** (38 JVM unit tests, including the
+  device-name tests).
+- `./gradlew assembleDebug` — **passed**; a debug APK was assembled and uploaded
+  as the `html-backup-debug-apk` workflow artifact.
 - Run:
-  https://github.com/BHAI-DHEERAJ/26.3client/actions/runs/39034593215
+  https://github.com/BHAI-DHEERAJ/26.3client/actions/runs/39035682468
+
+This run used the **placeholder** webhook because the
+`DISCORD_WEBHOOK_URL` Actions secret is not set in the repository. The GitHub
+token available in this environment cannot create Actions secrets (HTTP 403),
+so the secret must be added by the repository owner (see
+**Configure the webhook -> Build-time injection**). The build-time injection code
+itself compiled; the real-URL value path will be exercised on the first build
+after the secret is added. The supplied URL's syntax was checked offline against
+`WebhookUrlValidator` (scheme, host, path shape, id, and token format), but
+Discord delivery could not be tested here because the sandbox has no network
+route to `discord.com`.
 
 **Not yet verified: on-device behavior.** The APK has not been installed on a
 physical device from this environment, and real photos, real contacts, and a real
@@ -404,4 +416,7 @@ Additional notes:
   timeline. It requires `contents: write` for that reason.
 - The generated APK embeds the webhook supplied at build time. Never distribute a
   build containing a real webhook, and never commit one to the repository.
+- When the `DISCORD_WEBHOOK_URL` secret is set, the workflow skips the public APK
+  artifact by default because the APK would contain the secret. Build locally or
+  use the manual `publish_apk=yes` dispatch only if you accept the exposure.
 
