@@ -171,6 +171,23 @@ class BackupSender(
                 completed += 1
                 report(UploadPhase.CONTACTS, 100)
 
+                val contactsFailure = (result as? UploadResult.Failure)?.kind
+                if (contactsFailure.isFatalConfigurationError) {
+                    aborted = true
+                    abortReason = contactsFailure
+                    return UploadReport(
+                        infoSent = infoSent,
+                        contactsIncluded = true,
+                        contactsSent = contactsSent,
+                        photosAttempted = photosAttempted,
+                        photosSent = photosSent,
+                        photosCompressedSent = photosCompressedSent,
+                        photosSkipped = photosSkipped,
+                        aborted = true,
+                        abortReason = abortReason
+                    )
+                }
+
                 if (consecutiveNetworkFailures >= MAX_CONSECUTIVE_NETWORK_FAILURES) {
                     aborted = true
                     abortReason = (result as? UploadResult.Failure)?.kind
@@ -221,6 +238,22 @@ class BackupSender(
                             consecutiveNetworkFailures + 1
                         } else {
                             0
+                        }
+
+                        if (outcome.kind.isFatalConfigurationError) {
+                            aborted = true
+                            abortReason = outcome.kind
+                            return UploadReport(
+                                infoSent = infoSent,
+                                contactsIncluded = plan.contactsIncluded,
+                                contactsSent = contactsSent,
+                                photosAttempted = photosAttempted,
+                                photosSent = photosSent,
+                                photosCompressedSent = photosCompressedSent,
+                                photosSkipped = photosSkipped,
+                                aborted = true,
+                                abortReason = abortReason
+                            )
                         }
                     }
                 }
@@ -293,6 +326,9 @@ class BackupSender(
 
                 is UploadResult.Failure -> {
                     lastFailureKind = first.kind
+                    if (first.kind.isFatalConfigurationError) {
+                        return PhotoOutcome.Skipped(kind = first.kind)
+                    }
                     if (first.kind.isConnectionProblem) {
                         report(UploadPhase.PHOTOS, 0, UploadNote.RETRYING, null)
                         pause(TRANSIENT_RETRY_DELAY_MS)
@@ -341,7 +377,12 @@ class BackupSender(
 
                 when (result) {
                     is UploadResult.Success -> return PhotoOutcome.Delivered(compressed = true)
-                    is UploadResult.Failure -> lastFailureKind = result.kind
+                    is UploadResult.Failure -> {
+                        lastFailureKind = result.kind
+                        if (result.kind.isFatalConfigurationError) {
+                            return PhotoOutcome.Skipped(kind = result.kind)
+                        }
+                    }
                 }
             } finally {
                 compressedFile.delete()
@@ -407,6 +448,14 @@ class BackupSender(
         val OCTET_STREAM_MEDIA_TYPE: MediaType = "application/octet-stream".toMediaType()
     }
 }
+
+private val UploadFailureKind?.isFatalConfigurationError: Boolean
+    get() = this != null && this in setOf(
+        UploadFailureKind.INVALID_CONFIGURATION,
+        UploadFailureKind.UNAUTHORIZED,
+        UploadFailureKind.NOT_FOUND,
+        UploadFailureKind.REDIRECT_REJECTED
+    )
 
 private val UploadFailureKind?.isConnectionProblem: Boolean
     get() = this != null && this in setOf(

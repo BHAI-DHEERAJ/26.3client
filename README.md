@@ -63,7 +63,10 @@ whether contacts and the device report were delivered.
 
 If three network-level failures happen in a row (connectivity, timeout, TLS), the
 run stops early rather than hammering a broken connection; items already
-delivered stay delivered and are not re-sent automatically.
+delivered stay delivered and are not re-sent automatically. A fatal webhook
+error (invalid configuration, revoked/unknown webhook, or a redirect) stops the
+run immediately instead of repeating pointless compression attempts for every
+remaining photo.
 
 ---
 
