@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">HTML Backup</string>
+    <string name="hello_world_description">Hello World</string>
+
+    <!-- First-launch explanation and permission context. -->
+    <string name="intro_title">Before you start</string>
+    <string name="intro_message">HTML Backup can create a ZIP archive of:\n\n• photos in your DCIM and gallery collections (JPEG, PNG, WebP)\n• contacts from the Android Contacts Provider (names, phone numbers, email addresses)\n\nPHOTOS access is used to read images. On Android 14 and newer you can allow selected photos only. Without photo access, photos are not included.\n\nCONTACTS access is used to read contact records. Without it, contacts are not included.\n\nThe archive is prepared in private app storage. Nothing is uploaded automatically: after preparation you will review the archive contents and destination, then explicitly confirm the upload to your configured Discord webhook.\n\nYou can deny either permission. Only data you authorize is included.</string>
+    <string name="intro_not_configured">WebhookConfig.kt still contains the placeholder URL. You can review the permission and preparation flow, but Send will stay disabled until you add a real webhook and rebuild.</string>
+    <string name="action_continue">Continue</string>
+    <string name="action_not_now">Not now</string>
+
+    <!-- Permission errors. -->
+    <string name="no_access_title">No access granted</string>
+    <string name="no_access_message">Photo and contact permissions were not granted, so there is nothing to back up. No data was read or prepared.\n\nYou can allow access in the next prompt, or open Android Settings to grant permissions.</string>
+    <string name="action_try_again">Try again</string>
+    <string name="action_open_settings">Open settings</string>
+    <string name="action_close">Close</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_cancel_upload">Cancel upload</string>
+    <string name="action_send">Send to Discord</string>
+    <string name="toast_no_permissions">Permissions are still not granted.</string>
+    <string name="toast_webhook_not_configured">Webhook is not configured. No data was sent.</string>
+    <string name="toast_archive_discarded">Backup cancelled. The temporary archive was deleted.</string>
+    <string name="toast_preparation_cancelled">Backup preparation cancelled. Temporary files were deleted.</string>
+    <string name="toast_settings_unavailable">Android Settings could not be opened.</string>
+
+    <!-- Preparation progress. -->
+    <string name="progress_title_preparing">Preparing backup</string>
+    <string name="progress_title_uploading">Uploading backup</string>
+    <string name="progress_starting">Preparing backup…</string>
+    <string name="progress_finding_photos">Finding accessible photos…</string>
+    <string name="progress_adding_photos">Adding photos… %1$d of %2$d</string>
+    <string name="progress_reading_contacts">Reading contacts…</string>
+    <string name="progress_adding_contacts">Adding contacts to the archive…</string>
+    <string name="progress_finalizing">Finalizing the ZIP archive…</string>
+
+    <!-- Review-before-upload dialog. -->
+    <string name="consent_title">Review backup before upload</string>
+    <string name="consent_destination">Destination: %1$s</string>
+    <string name="consent_archive">Archive: %1$s (%2$s)</string>
+    <string name="consent_contents_heading">Contents:</string>
+    <string name="consent_photos">• Photos: %1$d files, %2$s of image data (%3$s)</string>
+    <string name="consent_contacts">• Contacts: %1$d records in contacts.json</string>
+    <string name="consent_photos_not_included">• Photos: not included (permission not granted)</string>
+    <string name="consent_contacts_not_included">• Contacts: not included (permission not granted)</string>
+    <string name="consent_manifest">• manifest.json: counts, date, and source metadata</string>
+    <string name="consent_skipped_photos">• %1$d photos could not be opened and were skipped</string>
+    <string name="consent_samples_heading">First entries in the ZIP:</string>
+    <string name="consent_size_warning">Warning: this archive is larger than the default 20 MiB Discord upload limit. Discord may reject it with HTTP 413. Reduce the photo set if the upload fails.</string>
+    <string name="consent_not_configured">The webhook is not configured, so sending is disabled.</string>
+    <string name="consent_warning">The ZIP contains personal data and will be uploaded over HTTPS to Discord. Uploading does not delete anything from this device. Continue only if you trust this destination.</string>
+    <string name="photo_access_full">full photo access</string>
+    <string name="photo_access_selected">selected photos only</string>
+
+    <!-- Preparation and archive results. -->
+    <string name="no_data_title">Nothing to back up</string>
+    <string name="no_data_message">The permissions are granted, but no accessible photos or contacts were found. If you are using partial photo access on Android 14 or newer, select photos in Android Settings. No upload was attempted.</string>
+    <string name="preparation_failed_title">Backup not prepared</string>
+    <string name="preparation_failed_message">The backup could not be prepared. Temporary files were removed. Check permissions and free storage, then try again.</string>
+
+    <!-- Upload progress and results. -->
+    <string name="upload_status_sending">Uploading over HTTPS…</string>
+    <string name="upload_status_waiting">Upload complete. Waiting for Discord to confirm…</string>
+    <string name="upload_status_rate_limited">Discord rate limit reached. Retrying in %1$d seconds…</string>
+    <string name="upload_success_title">Upload accepted</string>
+    <string name="upload_success_message">Discord accepted the archive and returned a success response. The backup is in the configured Discord channel. Your original photos and contacts were not changed.</string>
+    <string name="upload_failed_title">Upload failed</string>
+    <string name="upload_error_invalid_config">The webhook configuration is invalid. Edit WebhookConfig.kt with a valid Discord webhook URL and rebuild the app.</string>
+    <string name="upload_error_archive_unavailable">The temporary archive is missing. Prepare the backup again.</string>
+    <string name="upload_error_connectivity">Could not connect to Discord. Check the internet connection and try again.</string>
+    <string name="upload_error_timeout">The upload timed out before Discord responded. Try again.</string>
+    <string name="upload_error_tls">A secure HTTPS connection to Discord could not be established. The archive was not sent.</string>
+    <string name="upload_error_network">A network or file error interrupted the upload.</string>
+    <string name="upload_error_redirect">Discord returned an unexpected redirect (HTTP %1$d). The upload was stopped for safety.</string>
+    <string name="upload_error_webhook_rejected">Discord rejected the webhook (HTTP %1$d). The webhook may be invalid, deleted, or revoked.</string>
+    <string name="upload_error_too_large">Discord rejected the archive as too large (HTTP %1$d). Reduce the number of photos and prepare a new backup.</string>
+    <string name="upload_error_rate_limited">Discord is still rate limiting this webhook. Try again in about %1$d seconds.</string>
+    <string name="upload_error_rate_limited_unknown">Discord is rate limiting this webhook. Try again later.</string>
+    <string name="upload_error_server">Discord returned a server error (HTTP %1$d). Try again later.</string>
+    <string name="upload_error_rejected">Discord rejected the upload (HTTP %1$d). No success response was received.</string>
+    <string name="upload_error_unexpected">The upload failed unexpectedly. No success response was received.</string>
+    <string name="upload_cancelled_title">Upload cancelled</string>
+    <string name="upload_cancelled_message">The upload was cancelled. Discord may have received part of the archive, but no success response was confirmed.</string>
+    <string name="upload_cleanup_note">The temporary ZIP archive was deleted from this device.</string>
+    <string name="upload_cleanup_failed_note">The temporary ZIP archive could not be deleted. Clear the app cache in Android Settings to remove it.</string>
+</resources>

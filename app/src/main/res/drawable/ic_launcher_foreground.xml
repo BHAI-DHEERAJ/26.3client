@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- A simple location pin: backups stored safely off-device. -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,26 C40.19,26 29,37.19 29,51 C29,68.25 54,84 54,84 C54,84 79,68.25 79,51 C79,37.19 67.81,26 54,26 Z M54,59 C49.58,59 46,55.42 46,51 C46,46.58 49.58,43 54,43 C58.42,43 62,46.58 62,51 C62,55.42 58.42,59 54,59 Z" />
+</vector>
