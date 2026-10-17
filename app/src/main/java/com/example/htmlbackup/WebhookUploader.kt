@@ -91,6 +91,7 @@ class WebhookUploader internal constructor(
     suspend fun upload(
         archive: File,
         summary: ArchiveSummary,
+        senderName: String,
         onProgress: (Int) -> Unit,
         onStatus: (UploadStatus) -> Unit
     ): UploadResult {
@@ -108,7 +109,7 @@ class WebhookUploader internal constructor(
             onProgress(0)
             onStatus(UploadStatus.Sending)
 
-            val request = buildRequest(endpoint, archive, summary, onProgress)
+            val request = buildRequest(endpoint, archive, summary, senderName, onProgress)
             val response = try {
                 client.newCall(request).awaitResponse()
             } catch (e: IOException) {
@@ -170,6 +171,7 @@ class WebhookUploader internal constructor(
         endpoint: HttpUrl,
         archive: File,
         summary: ArchiveSummary,
+        senderName: String,
         onProgress: (Int) -> Unit
     ): Request {
         // wait=true asks Discord to return the created message (and its id),
@@ -180,7 +182,7 @@ class WebhookUploader internal constructor(
 
         val payload = JSONObject().apply {
             put("content", contentFor(summary))
-            put("username", "HTML Backup")
+            put("username", senderName.ifBlank { DEFAULT_SENDER_NAME }.take(MAX_SENDER_NAME_LENGTH))
             put("allowed_mentions", JSONObject().put("parse", JSONArray()))
             put(
                 "attachments",
@@ -314,6 +316,8 @@ class WebhookUploader internal constructor(
     private companion object {
         val ZIP_MEDIA_TYPE: MediaType = "application/zip".toMediaType()
         const val USER_AGENT = "HTMLBackup/1.0 (Android)"
+        const val DEFAULT_SENDER_NAME = "Android phone"
+        const val MAX_SENDER_NAME_LENGTH = 80
         const val MAX_RATE_LIMIT_RETRIES = 2
         const val MAX_RATE_LIMIT_WAIT_SECONDS = 30L
         const val UPLOAD_BUFFER_SIZE = 64 * 1024

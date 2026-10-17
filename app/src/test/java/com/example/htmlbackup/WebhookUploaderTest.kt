@@ -87,6 +87,7 @@ class WebhookUploaderTest {
             uploader.upload(
                 archive = archive,
                 summary = summary,
+                senderName = "Test Phone",
                 onProgress = { percent -> progressValues += percent },
                 onStatus = { status -> statuses += status }
             )
@@ -117,6 +118,7 @@ class WebhookUploaderTest {
         assertTrue(bodyText.contains("name=\"files[0]\"; filename=\"${archive.name}\""))
         assertTrue(bodyText.contains("Content-Type: application/zip"))
         assertTrue(bodyText.contains("2 photo(s), 1 contact(s)"))
+        assertTrue(bodyText.contains("\"username\":\"Test Phone\""))
     }
 
     @Test
@@ -209,6 +211,7 @@ class WebhookUploaderTest {
             unconfigured.upload(
                 archive = archive,
                 summary = summary,
+                senderName = "Test Phone",
                 onProgress = { _ -> },
                 onStatus = { _ -> }
             )

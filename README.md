@@ -43,23 +43,57 @@ loads disabled; it never receives personal data.
 
 ---
 
-## Configure the webhook before building
+## Configure the webhook
 
-Edit:
+The webhook URL is **not stored in the public source tree**. It is injected at
+build time.
 
+### Build-time injection (recommended)
+
+Supply the URL in one of these ways:
+
+```bash
+# Environment variable
+HTML_BACKUP_WEBHOOK_URL='https://discord.com/api/webhooks/<id>/<token>' ./gradlew assembleDebug
+
+# Or a Gradle property
+./gradlew assembleDebug -PhtmlBackup.webhookUrl='https://discord.com/api/webhooks/<id>/<token>'
 ```
-app/src/main/java/com/example/htmlbackup/WebhookConfig.kt
-```
 
-Replace the placeholder:
+`app/build.gradle.kts` writes the value into `BuildConfig.WEBHOOK_URL`, and
+`WebhookConfig.kt` reads it. If no value is supplied, the placeholder in
+`WebhookConfig.kt` is used, `WebhookConfig.isConfigured` is false, and Send is
+disabled.
 
-```kotlin
-const val WEBHOOK_URL: String =
-    "https://discord.com/api/webhooks/000000000000000000/REPLACE_WITH_YOUR_WEBHOOK_TOKEN"
-```
+For CI, add the URL as a GitHub Actions secret:
 
-with your own Discord webhook. You can create one in Discord under
-**Channel Settings -> Integrations -> Webhooks -> New Webhook -> Copy Webhook URL**.
+1. Open the repository on GitHub.
+2. **Settings -> Secrets and variables -> Actions -> New repository secret**.
+3. Name it `DISCORD_WEBHOOK_URL` and paste the webhook URL.
+
+The workflow maps that secret to `HTML_BACKUP_WEBHOOK_URL` for the Gradle build.
+The secret is masked in logs, and failure logs/annotations are additionally
+redacted before they are published.
+
+### Changing the webhook UI name
+
+Every upload sets the Discord message's **username** to the phone's name, so a
+backup arriving in the channel is labelled by device:
+
+- `Settings.Global.DEVICE_NAME` (the name configured in Android Settings);
+- otherwise `Build.MANUFACTURER` + `Build.MODEL`;
+- fallback: `Android phone`.
+
+`DeviceInfo.sanitize` collapses whitespace/control characters and caps the name
+at 80 characters. The device name is sent only as the Discord username; it is
+not added to the ZIP or its manifest. If you also want the Discord webhook
+itself renamed, edit the webhook name in Discord's channel settings.
+
+### Optional: hardcode for a private build
+
+If you build only for yourself from a private checkout, you may replace the
+`PLACEHOLDER_URL` inside `WebhookConfig.kt` with your URL. Never commit a real
+webhook to a public repository.
 
 Rules enforced by `WebhookUrlValidator`:
 
@@ -77,12 +111,16 @@ not installed.
 ### Webhook secrecy
 
 A Discord webhook URL is a bearer secret: anyone who has it can post to that
-channel. This project intentionally keeps configuration in Kotlin source as
-requested, which means a built APK contains the URL and it can be extracted.
-Use a dedicated private channel, do not distribute an APK containing a real
-webhook, and revoke/rotate the webhook if it is exposed.
+channel.
 
----
+- Keep it out of Git, screenshots, issues, chat logs, and build logs.
+- Any APK built with the URL contains it and it can be extracted from the APK.
+  Keep such APKs private.
+- Because the repository is public, the included workflow does **not** publish
+  an APK artifact when a real webhook is injected. Only a manual
+  `workflow_dispatch` run with `publish_apk=yes` overrides that guard, and it
+  warns that the artifact will be public.
+- If the URL leaks, delete the webhook in Discord and create a new one.
 
 ## Requirements
 
@@ -276,8 +314,9 @@ device you own with actual photos and contacts, and a test Discord channel.
 These steps have not been executed in this development workspace; they must be
 run by you before trusting a build.
 
-1. Create a dedicated Discord test channel and webhook. Paste the URL into
-   `WebhookConfig.kt`, build, and install.
+1. Create a dedicated Discord test channel and webhook. Build with
+   `HTML_BACKUP_WEBHOOK_URL='...' ./gradlew assembleDebug` (or add the
+   `DISCORD_WEBHOOK_URL` Actions secret and run the workflow), then install.
 2. Confirm the launcher screen shows only **Hello World** and the native
    explanation appears over it.
 3. Grant full photo and contact access. Verify that preparation starts without
@@ -321,8 +360,9 @@ app/src/main/java/com/example/htmlbackup/
 ├── ContactExporter.kt       # Contacts Provider query + contacts.json
 ├── ZipBackupManager.kt      # on-device ZIP assembly and cleanup
 ├── WebhookUploader.kt       # HTTP multipart upload, retries, cancellation
-├── WebhookConfig.kt         # the single webhook configuration point
+├── WebhookConfig.kt         # build-time webhook value + placeholder
 ├── WebhookUrlValidator.kt   # strict HTTPS/destination validation
+├── DeviceInfo.kt            # phone name used as the Discord username
 └── Formats.kt               # archive names and human-readable sizes
 
 app/src/main/assets/index.html          # local Hello World page
@@ -362,6 +402,6 @@ Additional notes:
 - The workflow also publishes the truncated Gradle log as a commit comment when
   a build fails, which makes CI failures diagnosable from the repository
   timeline. It requires `contents: write` for that reason.
-- The generated APK embeds whatever is in `WebhookConfig.kt`. Never distribute a
-  build containing a real webhook.
+- The generated APK embeds the webhook supplied at build time. Never distribute a
+  build containing a real webhook, and never commit one to the repository.
 

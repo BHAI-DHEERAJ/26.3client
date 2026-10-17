@@ -3,6 +3,32 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+// ---------------------------------------------------------------------------
+// Webhook configuration (injected at build time, never committed)
+//
+// Priority:
+//   1. -PhtmlBackup.webhookUrl=...
+//   2. HTML_BACKUP_WEBHOOK_URL environment variable (used by CI from the
+//      DISCORD_WEBHOOK_URL repository secret)
+//   3. empty string -> WebhookConfig falls back to its placeholder and Send is
+//      disabled in the app.
+//
+// The APK necessarily contains the URL when one is supplied. Keep builds that
+// contain a real webhook private.
+// ---------------------------------------------------------------------------
+val configuredWebhookUrl: String = providers.gradleProperty("htmlBackup.webhookUrl")
+    .orElse(providers.environmentVariable("HTML_BACKUP_WEBHOOK_URL"))
+    .orElse("")
+    .get()
+    .trim()
+
+fun quotedJavaString(value: String): String =
+    "\"" + value
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\r", "")
+        .replace("\n", "\\n") + "\""
+
 android {
     namespace = "com.example.htmlbackup"
     compileSdk = 35
@@ -13,6 +39,8 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
+
+        buildConfigField("String", "WEBHOOK_URL", quotedJavaString(configuredWebhookUrl))
     }
 
     buildTypes {
@@ -35,7 +63,7 @@ android {
     }
 
     buildFeatures {
-        buildConfig = false
+        buildConfig = true
     }
 
     packaging {

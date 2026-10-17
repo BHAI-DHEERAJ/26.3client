@@ -197,6 +197,7 @@ class BackupViewModel(application: Application) : AndroidViewModel(application) 
                 val result = uploader.upload(
                     archive = archive.file,
                     summary = archive.summary,
+                    senderName = DeviceInfo.senderName(getApplication()),
                     onProgress = { percent ->
                         val status = if (percent >= 100) {
                             getString(R.string.upload_status_waiting)
