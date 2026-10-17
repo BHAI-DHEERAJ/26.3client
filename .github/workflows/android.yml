@@ -63,11 +63,22 @@ jobs:
         run: |
           cat gradle-test.log gradle-assemble.log 2>/dev/null | tail -c 60000 > failure.log || true
           if [ -s failure.log ]; then
-            jq -Rs '{body: "CI failure log (truncated):\n\n```\n" + . + "\n```"}' failure.log > payload.json
+            jq -Rs '{body: ("CI failure log (truncated):\n\n```\n" + . + "\n```")}' failure.log > payload.json
             gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" --input payload.json || true
           fi
 
+      - name: Annotate build errors
+        if: failure()
+        run: |
+          for log in gradle-test.log gradle-assemble.log; do
+            [ -f "$log" ] || continue
+            grep -E "^(e: |w: .*error|FAILURE:|\* What went wrong:|\* Try:|Caused by:|Execution failed for task|> Task .* FAILED|.*: error:)" "$log" | head -25 | while IFS= read -r line; do
+              echo "::error::$(printf '%s' "$line" | sed 's/%/%25/g')"
+            done
+          done
+
       - name: Upload debug APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: html-backup-debug-apk
