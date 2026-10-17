@@ -338,25 +338,30 @@ is the confirmed webhook upload.
 
 ## Verification status (important)
 
-**This project has not been compiled, installed, or run on a device in the
-current development workspace.** The sandbox used to generate it has no Android
-SDK, no JDK, and no access to the Google Maven repository. Therefore:
+**CI build verified.** The GitHub Actions workflow in
+`.github/workflows/android.yml` ran on a clean `ubuntu-latest` runner for commit
+`cf3aa94`:
 
-- No claim of a successful Gradle build or APK installation is made here.
-- The unit tests have not been executed here.
-- What *was* verified: every Kotlin file parses without syntax errors (checked
-  with a tree-sitter Kotlin parser), every XML file is well-formed, and every
-  `R.string` / `R.color` / `R.layout` / `R.id` reference used by the code and
-  resources resolves to a declaration in this project. The source was also
-  reviewed for consistent class, constructor, and function signatures.
-- What remains unverified until you build: Kotlin/Java type-checking against the
-  real Android and AndroidX APIs, AAPT resource compilation, dependency
-  resolution, unit-test execution, and on-device behavior.
-- The final proof must come from running `./gradlew assembleDebug` and
-  `./gradlew testDebugUnitTest` on a machine with the Android SDK, then following
-  the real-device test plan above.
+- `./gradlew testDebugUnitTest` — **passed** (33 JVM unit tests).
+- `./gradlew assembleDebug` — **passed**; the debug APK was assembled and
+  uploaded as the `html-backup-debug-apk` workflow artifact.
+- Run:
+  https://github.com/BHAI-DHEERAJ/26.3client/actions/runs/39034593215
 
-If the first build reports a dependency or tool-version issue, align Android
-Studio's SDK 35 installation and the Gradle/AGP/Kotlin versions in this README.
-The code avoids deprecated storage APIs beyond the intentional
-`READ_EXTERNAL_STORAGE` fallback for Android 8-12.
+**Not yet verified: on-device behavior.** The APK has not been installed on a
+physical device from this environment, and real photos, real contacts, and a real
+Discord transfer have not been exercised. That part of the proof still requires
+the manual real-device test plan above, using a webhook and device you control.
+
+Additional notes:
+
+- CI signs the APK with the Android debug key. Generate your own release key
+  before distributing a build.
+- Workflow artifacts expire after 14 days; re-run the workflow or build locally
+  after that.
+- The workflow also publishes the truncated Gradle log as a commit comment when
+  a build fails, which makes CI failures diagnosable from the repository
+  timeline. It requires `contents: write` for that reason.
+- The generated APK embeds whatever is in `WebhookConfig.kt`. Never distribute a
+  build containing a real webhook.
+
