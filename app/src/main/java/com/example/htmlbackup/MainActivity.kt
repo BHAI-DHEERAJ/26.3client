@@ -509,7 +509,7 @@ class MainActivity : AppCompatActivity() {
                 append(
                     getString(
                         R.string.consent_phone_number,
-                        DeviceInfo.phoneNumberSummary(profile.telephony)
+                        DeviceInfo.ownNumberReviewLine(profile)
                     )
                 )
                 append('\n')

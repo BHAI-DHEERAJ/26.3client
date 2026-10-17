@@ -35,6 +35,8 @@ data class DeviceProfile(
     val packageName: String,
     val network: NetworkFacts,
     val telephony: TelephonyFacts,
+    /** Numbers on the user's own contact card ("me"), if any. */
+    val ownProfileNumbers: List<String>,
     val capturedAt: Instant
 )
 
@@ -97,6 +99,7 @@ object DeviceInfo {
             packageName = context.packageName,
             network = NetworkReporter(context).facts(),
             telephony = TelephonyReporter(context).facts(),
+            ownProfileNumbers = OwnProfileReader(context).ownPhoneNumbers(),
             capturedAt = Instant.now()
         )
     }
@@ -114,6 +117,29 @@ object DeviceInfo {
             ?.take(maxLength)
             ?.trim()
             .orEmpty()
+
+    /**
+     * One-line summary for the review dialog: SIM value when the carrier
+     * provisioned it, plus any numbers from the user's own contact card.
+     */
+    internal fun ownNumberReviewLine(profile: DeviceProfile): String {
+        val parts = mutableListOf<String>()
+        val sim = profile.telephony.phoneNumber
+        if (sim != null) {
+            parts += "SIM: $sim"
+        }
+        if (profile.ownProfileNumbers.isNotEmpty()) {
+            parts += "own contact card: " + profile.ownProfileNumbers.joinToString(", ")
+        }
+        if (parts.isNotEmpty()) {
+            return parts.joinToString("; ")
+        }
+        return when (profile.telephony.phoneNumberStatus) {
+            TelephonyFacts.PhoneNumberStatus.PERMISSION_DENIED -> "not permitted"
+            TelephonyFacts.PhoneNumberStatus.DISABLED -> "not included (disabled)"
+            else -> "not available (carrier did not provision it and no own contact card number)"
+        }
+    }
 
     /** Human-readable description of the own-number result, never a guess. */
     internal fun phoneNumberSummary(facts: TelephonyFacts): String = when (facts.phoneNumberStatus) {
@@ -181,7 +207,14 @@ object DeviceInfo {
                     }
                 )
             )
-            put(field("Phone number", phoneNumberSummary(profile.telephony)))
+            put(field("Phone number (SIM)", phoneNumberSummary(profile.telephony)))
+            put(
+                field(
+                    "Phone number (own contact card)",
+                    profile.ownProfileNumbers.joinToString(", ")
+                        .ifBlank { "not stored in Contacts" }
+                )
+            )
             put(
                 field(
                     "App",

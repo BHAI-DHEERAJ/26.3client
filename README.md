@@ -127,16 +127,31 @@ sending.
 | App | package, version name, version code | none |
 | Network | connection type (Wi-Fi/mobile/Ethernet/VPN/offline), local IP, VPN active, metered | `ACCESS_NETWORK_STATE` |
 | SIM / carrier | carrier name, SIM state, modem count, roaming | none |
-| Phone number | this device's own number | `READ_PHONE_NUMBERS` (optional) |
+| Phone number (SIM) | the number the carrier provisioned on the SIM | `READ_PHONE_NUMBERS` (optional) |
+| Phone number (own contact card) | numbers stored on the "me" card in Contacts | `READ_CONTACTS` (already required) |
 
 `ReportConfig.kt` has three switches (`INCLUDE_NETWORK_INFO`,
 `INCLUDE_TELEPHONY_INFO`, `INCLUDE_PHONE_NUMBER`) if you want to omit a section.
 Denying `READ_PHONE_NUMBERS` never blocks the photo/contact backup; the report
 simply says "not permitted".
 
-**Own phone number caveat:** `TelephonyManager` only returns a number if the
-carrier provisioned it on the SIM. Most modern SIMs return blank, and the report
-then says `not available (carrier did not provision it...)` rather than guessing.
+**Own phone number caveat:** there is no reliable "current mobile number" API on
+modern Android. The app tries two sources and labels each one honestly:
+
+1. **SIM** — `TelephonyManager.line1Number` with `READ_PHONE_NUMBERS`. Most
+   carriers never provision a number on the SIM, so this is usually blank.
+2. **Own contact card** — the phone number on the "me" profile in the Contacts
+   app (`ContactsContract.Profile`), read with `READ_CONTACTS`, which the
+   contact backup already needs. This often works on Indian SIMs because the
+   number was saved to Contacts, but it is the stored value, not a live SIM
+   query, and may be out of date.
+
+If neither source has a number, the report says
+`not available (carrier did not provision it and no own contact card number)`
+instead of guessing. The review dialog shows the same combined line before
+anything is sent. The "me" card numbers are separate from the
+`contacts.json` export: they appear only in the report field, never merged into
+the contacts file.
 
 **Not collected, at any setting:**
 

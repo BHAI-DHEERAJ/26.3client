@@ -45,7 +45,7 @@ The report never includes SMS/MMS contents, IMSI, ICCID, SIM serial numbers, or 
     <string name="consent_device_app">• App: HTML Backup %1$s (versionCode %2$d, %3$s)</string>
     <string name="consent_network">• Network: %1$s, local IP %2$s, VPN %3$s</string>
     <string name="consent_carrier">• Carrier: %1$s, SIM %2$s</string>
-    <string name="consent_phone_number">• Phone number (this device): %1$s</string>
+    <string name="consent_phone_number">• Phone number: %1$s</string>
     <string name="value_unavailable">unavailable</string>
     <string name="value_unknown">unknown</string>
     <string name="value_on">on</string>
