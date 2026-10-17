@@ -1,6 +1,7 @@
 package com.example.htmlbackup
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DeviceInfoTest {
@@ -25,7 +26,10 @@ class DeviceInfoTest {
     @Test
     fun truncatesLongDeviceNames() {
         assertEquals(80, DeviceInfo.sanitize("a".repeat(200)).length)
-        assertEquals(80, DeviceInfo.sanitize("b".repeat(79) + " " + "c".repeat(20)).length)
+
+        val cutOnWhitespace = DeviceInfo.sanitize("b".repeat(79) + " " + "c".repeat(20))
+        assertTrue(cutOnWhitespace.length <= 80)
+        assertEquals("b".repeat(79), cutOnWhitespace)
     }
 
     @Test
