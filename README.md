@@ -332,9 +332,9 @@ commit `c5eca3b`:
   https://github.com/BHAI-DHEERAJ/26.3client/actions/runs/39038664921
 
 **Not verified from this environment:** on-device behavior, real Discord
-  delivery, and real photo/contact contents. The sandbox cannot reach
-  `discord.com` and has no Android device, so the manual test plan above is still
-  required.
+delivery, and real photo/contact contents. The sandbox cannot reach
+`discord.com` and has no Android device, so the manual test plan above is still
+required.
 
 - The workflow publishes the APK artifact only when no real webhook is injected
   (or when a manual `publish_apk=yes` dispatch explicitly accepts the exposure).
