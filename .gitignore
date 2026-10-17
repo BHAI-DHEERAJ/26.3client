@@ -1,15 +1,28 @@
+# Gradle
 .gradle/
 build/
-run/
-run-data/
-*.log
+app/build/
 
-# IDE
+# Android Studio / IntelliJ
 .idea/
 *.iml
-.vscode/
-.eclipse/
-.classpath
-.project
-.settings/
-bin/
+*.ipr
+*.iws
+.navigation/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Local machine configuration
+local.properties
+keystore.properties
+*.jks
+*.keystore
+
+# Logs and temporary files
+*.log
+.DS_Store
+Thumbs.db
+
+# Generated signing material
+release/
