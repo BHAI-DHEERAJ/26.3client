@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-and-test:
@@ -48,10 +48,24 @@ jobs:
       - name: Run JVM unit tests
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon --stacktrace testDebugUnitTest
+          set -o pipefail
+          ./gradlew --no-daemon --stacktrace testDebugUnitTest 2>&1 | tee gradle-test.log
 
       - name: Assemble debug APK
-        run: ./gradlew --no-daemon --stacktrace assembleDebug
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon --stacktrace assembleDebug 2>&1 | tee gradle-assemble.log
+
+      - name: Publish failure log
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat gradle-test.log gradle-assemble.log 2>/dev/null | tail -c 60000 > failure.log || true
+          if [ -s failure.log ]; then
+            jq -Rs '{body: "CI failure log (truncated):\n\n```\n" + . + "\n```"}' failure.log > payload.json
+            gh api "repos/${{ github.repository }}/commits/${{ github.sha }}/comments" --input payload.json || true
+          fi
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
