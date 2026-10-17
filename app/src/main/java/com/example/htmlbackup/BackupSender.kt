@@ -150,7 +150,7 @@ class BackupSender(
 
                 report(UploadPhase.CONTACTS, 0, UploadNote.SENDING)
                 var result = sendContacts()
-                if (result is UploadResult.Failure && result.kind.isConnectionProblem()) {
+                if (result is UploadResult.Failure && result.kind.isConnectionProblem) {
                     report(UploadPhase.CONTACTS, 0, UploadNote.RETRYING)
                     pause(TRANSIENT_RETRY_DELAY_MS)
                     result = sendContacts()
@@ -159,7 +159,7 @@ class BackupSender(
                 contactsSent = result is UploadResult.Success
                 if (!contactsSent) {
                     val kind = (result as? UploadResult.Failure)?.kind
-                    consecutiveNetworkFailures = if (kind.isConnectionProblem()) {
+                    consecutiveNetworkFailures = if (kind.isConnectionProblem) {
                         consecutiveNetworkFailures + 1
                     } else {
                         0
@@ -217,7 +217,7 @@ class BackupSender(
 
                     is PhotoOutcome.Skipped -> {
                         photosSkipped += 1
-                        consecutiveNetworkFailures = if (outcome.kind.isConnectionProblem()) {
+                        consecutiveNetworkFailures = if (outcome.kind.isConnectionProblem) {
                             consecutiveNetworkFailures + 1
                         } else {
                             0
@@ -293,7 +293,7 @@ class BackupSender(
 
                 is UploadResult.Failure -> {
                     lastFailureKind = first.kind
-                    if (first.kind.isConnectionProblem()) {
+                    if (first.kind.isConnectionProblem) {
                         report(UploadPhase.PHOTOS, 0, UploadNote.RETRYING, null)
                         pause(TRANSIENT_RETRY_DELAY_MS)
                         val retry = sendOriginal(
@@ -349,6 +349,32 @@ class BackupSender(
         }
 
         return PhotoOutcome.Skipped(kind = lastFailureKind)
+    }
+
+    private suspend fun sendOriginal(
+        photo: PhotoItem,
+        number: Int,
+        caption: String,
+        senderName: String,
+        statusHandler: (UploadPhase, Int) -> (UploadStatus) -> Unit,
+        progressHandler: (UploadPhase) -> (Int) -> Unit
+    ): UploadResult {
+        val mediaType = photo.mimeType.toMediaTypeOrNull() ?: OCTET_STREAM_MEDIA_TYPE
+        val body = ContentUriRequestBody(
+            resolver = context.contentResolver,
+            uri = photo.uri,
+            mediaType = mediaType,
+            declaredLength = photo.sizeBytes,
+            onProgress = progressHandler(UploadPhase.PHOTOS)
+        )
+
+        return uploader.sendAttachment(
+            body = body,
+            filename = PhotoFormats.uploadFileName(number, photo.displayName, photo.mimeType),
+            caption = caption,
+            senderName = senderName,
+            onStatus = statusHandler(UploadPhase.PHOTOS, 0)
+        )
     }
 
     private sealed interface PhotoOutcome {
