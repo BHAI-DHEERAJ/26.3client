@@ -60,6 +60,14 @@ HTML_BACKUP_WEBHOOK_URL='https://discord.com/api/webhooks/<id>/<token>' ./gradle
 ./gradlew assembleDebug -PhtmlBackup.webhookUrl='https://discord.com/api/webhooks/<id>/<token>'
 ```
 
+For Android Studio builds, put the property in your **user-level**
+`~/.gradle/gradle.properties` (outside the repository) so it does not end up in
+Git:
+
+```properties
+htmlBackup.webhookUrl=https://discord.com/api/webhooks/<id>/<token>
+```
+
 `app/build.gradle.kts` writes the value into `BuildConfig.WEBHOOK_URL`, and
 `WebhookConfig.kt` reads it. If no value is supplied, the placeholder in
 `WebhookConfig.kt` is used, `WebhookConfig.isConfigured` is false, and Send is
