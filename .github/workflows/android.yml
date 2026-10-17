@@ -24,20 +24,31 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
           cache: gradle
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK packages
-        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+      - name: Configure the preinstalled Android SDK
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+          SDKMANAGER="$(find "$SDK_ROOT" -path '*/cmdline-tools/*/bin/sdkmanager' -print -quit)"
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager not found under $SDK_ROOT"
+            find "$SDK_ROOT" -maxdepth 3 -type d | head -50
+            exit 1
+          fi
+          yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Run JVM unit tests
-        run: ./gradlew --no-daemon --stacktrace testDebugUnitTest
+        run: |
+          chmod +x gradlew
+          ./gradlew --no-daemon --stacktrace testDebugUnitTest
 
       - name: Assemble debug APK
         run: ./gradlew --no-daemon --stacktrace assembleDebug
