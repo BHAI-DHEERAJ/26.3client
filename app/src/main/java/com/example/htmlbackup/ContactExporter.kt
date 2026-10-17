@@ -8,8 +8,6 @@ import java.time.Instant
 import java.time.format.DateTimeFormatter
 import java.util.LinkedHashMap
 import java.util.LinkedHashSet
-import java.util.zip.ZipEntry
-import java.util.zip.ZipOutputStream
 
 /** A single exported contact. Missing fields are represented by empty lists. */
 data class ContactRecord(
@@ -155,21 +153,8 @@ class ContactExporter(private val context: Context) {
         return ContactExport(contacts = records, exportedAt = Instant.now())
     }
 
-    /** Writes contacts.json into the open ZIP and returns its uncompressed size. */
-    fun writeJsonToZip(zipOut: ZipOutputStream, export: ContactExport): Long {
-        val json = ContactJsonEncoder.encode(export)
-        zipOut.putNextEntry(ZipEntry(ENTRY_NAME))
-        zipOut.write(json)
-        zipOut.closeEntry()
-        return json.size.toLong()
-    }
-
     private class MutableContact(val name: String) {
         val phoneNumbers: LinkedHashSet<String> = LinkedHashSet()
         val emailAddresses: LinkedHashSet<String> = LinkedHashSet()
-    }
-
-    private companion object {
-        const val ENTRY_NAME = "contacts.json"
     }
 }

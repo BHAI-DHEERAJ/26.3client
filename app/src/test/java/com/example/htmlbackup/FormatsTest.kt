@@ -4,7 +4,6 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
-import java.time.Instant
 import java.util.Locale
 
 class FormatsTest {
@@ -20,16 +19,6 @@ class FormatsTest {
     @After
     fun restoreLocale() {
         Locale.setDefault(originalLocale)
-    }
-
-    @Test
-    fun archiveNameIsDeterministicUtcAndFilesystemSafe() {
-        val name = Formats.archiveName(Instant.parse("2026-10-17T12:34:56.789Z"))
-        assertEquals("html-backup-20261017-123456-789.zip", name)
-        assertEquals(
-            name,
-            Formats.archiveName(Instant.parse("2026-10-17T12:34:56.789Z"))
-        )
     }
 
     @Test

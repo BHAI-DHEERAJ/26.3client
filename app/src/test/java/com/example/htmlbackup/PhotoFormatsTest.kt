@@ -23,60 +23,75 @@ class PhotoFormatsTest {
     }
 
     @Test
-    fun entryNameUsesIndexPrefixAndSanitizedName() {
+    fun uploadNameUsesIndexPrefixAndSanitizedName() {
         assertEquals(
-            "photos/00001_IMG_1234.jpg",
-            PhotoFormats.zipEntryName(1, "IMG_1234.jpg", "image/jpeg")
+            "00001_IMG_1234.jpg",
+            PhotoFormats.uploadFileName(1, "IMG_1234.jpg", "image/jpeg")
         )
         assertEquals(
-            "photos/00042_holiday_photo.png",
-            PhotoFormats.zipEntryName(42, "holiday photo.png", "image/png")
+            "00042_holiday_photo.png",
+            PhotoFormats.uploadFileName(42, "holiday photo.png", "image/png")
         )
     }
 
     @Test
     fun extensionIsTakenFromMimeTypeNotFileName() {
         assertEquals(
-            "photos/00003_photo.webp",
-            PhotoFormats.zipEntryName(3, "photo.jpg", "image/webp")
+            "00003_photo.webp",
+            PhotoFormats.uploadFileName(3, "photo.jpg", "image/webp")
         )
     }
 
     @Test
     fun traversalAndSpecialCharactersAreNeutralized() {
-        val entry = PhotoFormats.zipEntryName(7, "../../etc/passwd.jpg", "image/jpeg")
-        assertEquals("photos/00007_passwd.jpg", entry)
-        assertTrue(!entry.contains(".."))
-        assertTrue(!entry.contains("/etc/"))
+        val name = PhotoFormats.uploadFileName(7, "../../etc/passwd.jpg", "image/jpeg")
+        assertEquals("00007_passwd.jpg", name)
+        assertTrue(!name.contains(".."))
+        assertTrue(!name.contains("/etc/"))
     }
 
     @Test
     fun blankOrDotOnlyNamesFallBackToPhoto() {
-        assertEquals(
-            "photos/00001_photo.jpg",
-            PhotoFormats.zipEntryName(1, null, "image/jpeg")
-        )
-        assertEquals(
-            "photos/00002_photo.png",
-            PhotoFormats.zipEntryName(2, "   ", "image/png")
-        )
-        assertEquals(
-            "photos/00003_photo.webp",
-            PhotoFormats.zipEntryName(3, "...webp", "image/webp")
-        )
+        assertEquals("00001_photo.jpg", PhotoFormats.uploadFileName(1, null, "image/jpeg"))
+        assertEquals("00002_photo.png", PhotoFormats.uploadFileName(2, "   ", "image/png"))
+        assertEquals("00003_photo.webp", PhotoFormats.uploadFileName(3, "...webp", "image/webp"))
     }
 
     @Test
     fun indexesKeepDuplicateDisplayNamesUnique() {
-        val first = PhotoFormats.zipEntryName(1, "image.jpg", "image/jpeg")
-        val second = PhotoFormats.zipEntryName(2, "image.jpg", "image/jpeg")
+        val first = PhotoFormats.uploadFileName(1, "image.jpg", "image/jpeg")
+        val second = PhotoFormats.uploadFileName(2, "image.jpg", "image/jpeg")
         assertNotEquals(first, second)
     }
 
     @Test
     fun longNamesAreBound() {
-        val entry = PhotoFormats.zipEntryName(9, "a".repeat(200) + ".png", "image/png")
-        val base = entry.removePrefix("photos/00009_").removeSuffix(".png")
+        val name = PhotoFormats.uploadFileName(9, "a".repeat(200) + ".png", "image/png")
+        val base = name.removePrefix("00009_").removeSuffix(".png")
         assertTrue(base.length <= 60)
+    }
+
+    @Test
+    fun compressedNamesAreJpegAndDistinctFromOriginals() {
+        assertEquals(
+            "00005_photo-compressed.jpg",
+            PhotoFormats.compressedFileName(5, "photo.png")
+        )
+        assertNotEquals(
+            PhotoFormats.uploadFileName(5, "photo.png", "image/png"),
+            PhotoFormats.compressedFileName(5, "photo.png")
+        )
+    }
+
+    @Test
+    fun quarterResolutionNamesAreMarkedAndDistinct() {
+        assertEquals(
+            "00005_photo-compressed-4x.jpg",
+            PhotoFormats.compressedFileName(5, "photo.png", quarterResolution = true)
+        )
+        assertNotEquals(
+            PhotoFormats.compressedFileName(5, "photo.png"),
+            PhotoFormats.compressedFileName(5, "photo.png", quarterResolution = true)
+        )
     }
 }

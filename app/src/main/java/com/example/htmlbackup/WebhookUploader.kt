@@ -1,11 +1,11 @@
 package com.example.htmlbackup
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.HttpUrl
@@ -16,10 +16,8 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.Response
-import okio.BufferedSink
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.File
 import java.io.IOException
 import java.net.ConnectException
 import java.net.SocketTimeoutException
@@ -30,7 +28,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.math.roundToLong
 
-/** Final outcome of one upload attempt (including rate-limit retries). */
+/** Final outcome of one webhook request (including rate-limit retries). */
 sealed interface UploadResult {
     data class Success(val messageId: String?) : UploadResult
 
@@ -44,7 +42,6 @@ sealed interface UploadResult {
 /** Safe, structured failure reasons; the UI supplies the human-readable text. */
 enum class UploadFailureKind {
     INVALID_CONFIGURATION,
-    ARCHIVE_UNAVAILABLE,
     CONNECTIVITY,
     TIMEOUT,
     TLS,
@@ -59,22 +56,24 @@ enum class UploadFailureKind {
     UNEXPECTED
 }
 
-/** Non-terminal status updates shown while the upload is running. */
+/** Non-terminal status updates shown while a request is running. */
 sealed interface UploadStatus {
     data object Sending : UploadStatus
     data class RateLimited(val retryAfterSeconds: Long) : UploadStatus
 }
 
 /**
- * Uploads the prepared ZIP to the Discord webhook using Discord's multipart
- * format: a payload_json part plus a files[0] part.
+ * Sends one Discord webhook message per call, over HTTPS.
+ *
+ * Two shapes are supported:
+ * - [sendMessage]: a JSON-only message (used for the device/app report).
+ * - [sendAttachment]: multipart with exactly one `files[0]` part.
  *
  * Security properties:
- * - The endpoint is provided by [WebhookConfig], which validates HTTPS and an
- *   exact Discord host allowlist.
- * - Redirects are not followed, preventing the webhook token from being
- *   forwarded to another host.
- * - The webhook URL is never logged and never included in a failure result.
+ * - the endpoint comes from [WebhookConfig], which enforces HTTPS and an exact
+ *   Discord host allowlist;
+ * - redirects are not followed, so the webhook token cannot be forwarded;
+ * - the webhook URL is never logged or included in a failure result;
  * - OkHttp logging interceptors are deliberately not installed.
  */
 class WebhookUploader internal constructor(
@@ -88,30 +87,83 @@ class WebhookUploader internal constructor(
         sleeper = { millis -> delay(millis) }
     )
 
-    suspend fun upload(
-        archive: File,
-        summary: ArchiveSummary,
+    /** Sends a JSON-only message, used for the device and app report. */
+    suspend fun sendMessage(
+        payload: JSONObject,
         senderName: String,
-        onProgress: (Int) -> Unit,
         onStatus: (UploadStatus) -> Unit
     ): UploadResult {
-        if (!archive.isFile || !archive.canRead()) {
-            return UploadResult.Failure(UploadFailureKind.ARCHIVE_UNAVAILABLE)
-        }
-
+        val body = withSender(payload, senderName).toString()
         val endpoint = endpointProvider()
             ?: return UploadResult.Failure(UploadFailureKind.INVALID_CONFIGURATION)
 
+        return execute(
+            buildRequest = {
+                Request.Builder()
+                    .url(withWait(endpoint))
+                    .post(body.toRequestBody(JSON_MEDIA_TYPE))
+                    .header("Accept", "application/json")
+                    .header("User-Agent", USER_AGENT)
+                    .build()
+            },
+            onStatus = onStatus
+        )
+    }
+
+    /** Sends exactly one file, with [caption] as the message content. */
+    suspend fun sendAttachment(
+        body: RequestBody,
+        filename: String,
+        caption: String,
+        senderName: String,
+        onStatus: (UploadStatus) -> Unit
+    ): UploadResult {
+        val endpoint = endpointProvider()
+            ?: return UploadResult.Failure(UploadFailureKind.INVALID_CONFIGURATION)
+
+        val payloadJson = withSender(JSONObject().put("content", caption), senderName)
+            .put(
+                "attachments",
+                JSONArray().put(
+                    JSONObject().apply {
+                        put("id", "0")
+                        put("filename", filename)
+                    }
+                )
+            )
+            .toString()
+
+        return execute(
+            buildRequest = {
+                val multipart = MultipartBody.Builder()
+                    .setType(MultipartBody.FORM)
+                    .addFormDataPart("payload_json", payloadJson)
+                    .addFormDataPart("files[0]", filename, body)
+                    .build()
+
+                Request.Builder()
+                    .url(withWait(endpoint))
+                    .post(multipart)
+                    .header("Accept", "application/json")
+                    .header("User-Agent", USER_AGENT)
+                    .build()
+            },
+            onStatus = onStatus
+        )
+    }
+
+    private suspend fun execute(
+        buildRequest: () -> Request,
+        onStatus: (UploadStatus) -> Unit
+    ): UploadResult {
         var rateLimitRetries = 0
 
         while (true) {
             currentCoroutineContext().ensureActive()
-            onProgress(0)
             onStatus(UploadStatus.Sending)
 
-            val request = buildRequest(endpoint, archive, summary, senderName, onProgress)
             val response = try {
-                client.newCall(request).awaitResponse()
+                client.newCall(buildRequest()).awaitResponse()
             } catch (e: IOException) {
                 return UploadResult.Failure(kind = networkFailureKind(e))
             }
@@ -130,13 +182,13 @@ class WebhookUploader internal constructor(
                         retryAfterSeconds = parseRetryAfterSeconds(
                             headerValue = currentResponse.header("Retry-After"),
                             body = responseBody
-                        )
+                        ),
+                        errorCode = parseDiscordErrorCode(responseBody)
                     )
                 }
             }
 
             if (info.successful) {
-                onProgress(100)
                 return UploadResult.Success(info.messageId)
             }
 
@@ -159,6 +211,13 @@ class WebhookUploader internal constructor(
                 )
             }
 
+            if (info.code == 413 || info.errorCode == DISCORD_ENTITY_TOO_LARGE_CODE) {
+                return UploadResult.Failure(
+                    kind = UploadFailureKind.PAYLOAD_TOO_LARGE,
+                    httpStatusCode = info.code
+                )
+            }
+
             return UploadResult.Failure(
                 kind = failureKindForStatus(info.code),
                 httpStatusCode = info.code,
@@ -167,68 +226,23 @@ class WebhookUploader internal constructor(
         }
     }
 
-    private fun buildRequest(
-        endpoint: HttpUrl,
-        archive: File,
-        summary: ArchiveSummary,
-        senderName: String,
-        onProgress: (Int) -> Unit
-    ): Request {
-        // wait=true asks Discord to return the created message (and its id),
-        // so a 2xx response is an actual confirmed upload.
-        val url = endpoint.newBuilder()
+    private fun withSender(payload: JSONObject, senderName: String): JSONObject =
+        JSONObject(payload.toString()).apply {
+            put(
+                "username",
+                senderName.ifBlank { DEFAULT_SENDER_NAME }.take(MAX_SENDER_NAME_LENGTH)
+            )
+        }
+
+    private fun withWait(endpoint: HttpUrl): HttpUrl =
+        endpoint.newBuilder()
             .setQueryParameter("wait", "true")
             .build()
-
-        val payload = JSONObject().apply {
-            put("content", contentFor(summary))
-            put("username", senderName.ifBlank { DEFAULT_SENDER_NAME }.take(MAX_SENDER_NAME_LENGTH))
-            put("allowed_mentions", JSONObject().put("parse", JSONArray()))
-            put(
-                "attachments",
-                JSONArray().put(
-                    JSONObject().apply {
-                        put("id", "0")
-                        put("filename", archive.name)
-                    }
-                )
-            )
-        }
-
-        val multipart = MultipartBody.Builder()
-            .setType(MultipartBody.FORM)
-            .addFormDataPart("payload_json", payload.toString())
-            .addFormDataPart(
-                "files[0]",
-                archive.name,
-                ProgressRequestBody(archive, ZIP_MEDIA_TYPE, onProgress)
-            )
-            .build()
-
-        return Request.Builder()
-            .url(url)
-            .post(multipart)
-            .header("Accept", "application/json")
-            .header("User-Agent", USER_AGENT)
-            .build()
-    }
-
-    private fun contentFor(summary: ArchiveSummary): String {
-        val categories = mutableListOf<String>()
-        if (summary.photosIncluded) {
-            categories += "${summary.photoCount} photo(s)"
-        }
-        if (summary.contactsIncluded) {
-            categories += "${summary.contactCount} contact(s)"
-        }
-        return "HTML Backup archive: ${categories.joinToString(", ")}."
-    }
 
     private fun failureKindForStatus(code: Int): UploadFailureKind = when {
         code in 300..399 -> UploadFailureKind.REDIRECT_REJECTED
         code == 401 || code == 403 -> UploadFailureKind.UNAUTHORIZED
         code == 404 -> UploadFailureKind.NOT_FOUND
-        code == 413 -> UploadFailureKind.PAYLOAD_TOO_LARGE
         code in 500..599 -> UploadFailureKind.SERVER_ERROR
         else -> UploadFailureKind.REJECTED
     }
@@ -248,6 +262,14 @@ class WebhookUploader internal constructor(
         }
     }.getOrNull()
 
+    private fun parseDiscordErrorCode(body: String): Int? = runCatching {
+        if (body.isBlank()) {
+            null
+        } else {
+            JSONObject(body).optInt("code", -1).takeIf { it > 0 }
+        }
+    }.getOrNull()
+
     private fun parseRetryAfterSeconds(headerValue: String?, body: String): Long? {
         val headerSeconds = headerValue?.trim()?.toDoubleOrNull()
         val bodySeconds = if (body.isBlank()) {
@@ -262,65 +284,22 @@ class WebhookUploader internal constructor(
         return seconds.coerceIn(1.0, 60.0).roundToLong()
     }
 
-    private class ProgressRequestBody(
-        private val file: File,
-        private val mediaType: MediaType,
-        private val onProgress: (Int) -> Unit
-    ) : RequestBody() {
-
-        override fun contentType(): MediaType = mediaType
-
-        override fun contentLength(): Long = file.length()
-
-        override fun writeTo(sink: BufferedSink) {
-            val totalBytes = file.length()
-            if (totalBytes <= 0L) {
-                onProgress(100)
-                return
-            }
-
-            var uploadedBytes = 0L
-            var lastPercent = -1
-            val buffer = ByteArray(UPLOAD_BUFFER_SIZE)
-
-            file.inputStream().use { input ->
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read == -1) {
-                        break
-                    }
-                    sink.write(buffer, 0, read)
-                    uploadedBytes += read
-                    val percent = ((uploadedBytes * 100.0) / totalBytes)
-                        .toInt()
-                        .coerceIn(0, 100)
-                    if (percent != lastPercent) {
-                        lastPercent = percent
-                        onProgress(percent)
-                    }
-                }
-            }
-
-            sink.flush()
-            onProgress(100)
-        }
-    }
-
     private data class ResponseInfo(
         val code: Int,
         val successful: Boolean,
         val messageId: String?,
-        val retryAfterSeconds: Long?
+        val retryAfterSeconds: Long?,
+        val errorCode: Int?
     )
 
     private companion object {
-        val ZIP_MEDIA_TYPE: MediaType = "application/zip".toMediaType()
-        const val USER_AGENT = "HTMLBackup/1.0 (Android)"
+        val JSON_MEDIA_TYPE: MediaType = "application/json; charset=utf-8".toMediaType()
+        const val USER_AGENT = "HTMLBackup/2.0 (Android)"
         const val DEFAULT_SENDER_NAME = "Android phone"
         const val MAX_SENDER_NAME_LENGTH = 80
-        const val MAX_RATE_LIMIT_RETRIES = 2
-        const val MAX_RATE_LIMIT_WAIT_SECONDS = 30L
-        const val UPLOAD_BUFFER_SIZE = 64 * 1024
+        const val MAX_RATE_LIMIT_RETRIES = 3
+        const val MAX_RATE_LIMIT_WAIT_SECONDS = 60L
+        const val DISCORD_ENTITY_TOO_LARGE_CODE = 40005
 
         fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(30, TimeUnit.SECONDS)
@@ -332,6 +311,9 @@ class WebhookUploader internal constructor(
             .build()
     }
 }
+
+private fun String.toRequestBody(mediaType: MediaType): RequestBody =
+    RequestBody.create(mediaType, this)
 
 private suspend fun Call.awaitResponse(): Response = suspendCancellableCoroutine { continuation ->
     continuation.invokeOnCancellation {

@@ -19,8 +19,8 @@ import kotlinx.coroutines.withContext
 sealed interface BackupUiState {
     data object Idle : BackupUiState
     data class Preparing(val message: String, val percent: Int?) : BackupUiState
-    data class Ready(val summary: ArchiveSummary) : BackupUiState
-    data class Uploading(val percent: Int, val status: String) : BackupUiState
+    data class Ready(val plan: BackupPlan) : BackupUiState
+    data class Uploading(val percent: Int, val message: String) : BackupUiState
 }
 
 sealed interface BackupUiEvent {
@@ -30,12 +30,12 @@ sealed interface BackupUiEvent {
 
 /**
  * Owns the backup lifecycle. It survives configuration changes, keeps the
- * prepared archive out of the Activity, and never uploads without an explicit
- * [uploadArchive] call from the review dialog.
+ * discovered plan out of the Activity, and never uploads without an explicit
+ * [uploadBackup] call from the review dialog.
  */
 class BackupViewModel(application: Application) : AndroidViewModel(application) {
-    private val zipManager = ZipBackupManager(application)
-    private val uploader = WebhookUploader()
+    private val preparer = BackupPreparer(application)
+    private val sender = BackupSender(application)
 
     private val _state = MutableStateFlow<BackupUiState>(BackupUiState.Idle)
     val state: StateFlow<BackupUiState> = _state.asStateFlow()
@@ -45,17 +45,16 @@ class BackupViewModel(application: Application) : AndroidViewModel(application) 
 
     private var preparationJob: Job? = null
     private var uploadJob: Job? = null
-    private var preparedArchive: PreparedArchive? = null
+    private var plan: BackupPlan? = null
 
     /** Persists across rotation so the intro does not reappear. */
     var introHandled: Boolean = false
         private set
 
     init {
-        // Remove archives left behind by a previous process. This runs off the
-        // main thread; preparation also clears the directory before writing.
+        // Remove compressed fallbacks left behind by a previous process.
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching { zipManager.clearTemporaryArchives() }
+            runCatching { sender.clearTemporaryFiles() }
         }
     }
 
@@ -78,15 +77,14 @@ class BackupViewModel(application: Application) : AndroidViewModel(application) 
 
         preparationJob = viewModelScope.launch {
             try {
-                val archive = zipManager.prepareBackup(request) { progress ->
+                val prepared = preparer.prepare(request) { progress ->
                     _state.value = BackupUiState.Preparing(
                         message = preparationMessage(progress),
                         percent = progress.percent
                     )
                 }
 
-                if (!archive.summary.hasAnyData) {
-                    zipManager.deleteArchive(archive)
+                if (!prepared.hasAnyData) {
                     _state.value = BackupUiState.Idle
                     sendEvent(
                         BackupUiEvent.Result(
@@ -97,11 +95,11 @@ class BackupViewModel(application: Application) : AndroidViewModel(application) 
                     return@launch
                 }
 
-                preparedArchive = archive
-                _state.value = BackupUiState.Ready(archive.summary)
+                plan = prepared
+                _state.value = BackupUiState.Ready(prepared)
             } catch (e: CancellationException) {
                 withContext(NonCancellable) {
-                    cleanupArchive()
+                    plan = null
                     _state.value = BackupUiState.Idle
                     sendEvent(
                         BackupUiEvent.Toast(
@@ -111,7 +109,7 @@ class BackupViewModel(application: Application) : AndroidViewModel(application) 
                 }
                 throw e
             } catch (e: BackupException) {
-                cleanupArchive()
+                plan = null
                 _state.value = BackupUiState.Idle
                 sendEvent(
                     BackupUiEvent.Result(
@@ -120,7 +118,7 @@ class BackupViewModel(application: Application) : AndroidViewModel(application) 
                     )
                 )
             } catch (e: Exception) {
-                cleanupArchive()
+                plan = null
                 _state.value = BackupUiState.Idle
                 sendEvent(
                     BackupUiEvent.Result(
@@ -141,21 +139,21 @@ class BackupViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     /** The user refused the transfer in the review dialog. */
-    fun discardPreparedArchive() {
+    fun discardPlan() {
         if (_state.value !is BackupUiState.Ready) {
             return
         }
 
-        cleanupArchive()
+        plan = null
         _state.value = BackupUiState.Idle
-        eventChannel.trySend(BackupUiEvent.Toast(getString(R.string.toast_archive_discarded)))
+        eventChannel.trySend(BackupUiEvent.Toast(getString(R.string.toast_plan_discarded)))
     }
 
     /**
      * Called only after the review dialog has been shown and the user tapped
      * Send. This is the sole path that performs network transmission.
      */
-    fun uploadArchive() {
+    fun uploadBackup() {
         if (_state.value !is BackupUiState.Ready) {
             return
         }
@@ -163,25 +161,25 @@ class BackupViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
 
-        val archive = preparedArchive
-        if (archive == null) {
+        val currentPlan = plan
+        if (currentPlan == null) {
             _state.value = BackupUiState.Idle
             eventChannel.trySend(
                 BackupUiEvent.Result(
                     getString(R.string.upload_failed_title),
-                    getString(R.string.upload_error_archive_unavailable)
+                    getString(R.string.upload_error_plan_unavailable)
                 )
             )
             return
         }
 
         if (!WebhookConfig.isConfigured) {
-            val cleanupOk = cleanupArchive()
+            val ok = cleanupTemporaryFiles()
             _state.value = BackupUiState.Idle
             eventChannel.trySend(
                 BackupUiEvent.Result(
                     getString(R.string.upload_failed_title),
-                    getString(R.string.upload_error_invalid_config) + cleanupNote(cleanupOk)
+                    getString(R.string.upload_error_invalid_config) + cleanupNote(ok)
                 )
             )
             return
@@ -189,71 +187,45 @@ class BackupViewModel(application: Application) : AndroidViewModel(application) 
 
         _state.value = BackupUiState.Uploading(
             percent = 0,
-            status = getString(R.string.upload_status_sending)
+            message = getString(R.string.upload_status_sending)
         )
 
         uploadJob = viewModelScope.launch {
             try {
-                val result = uploader.upload(
-                    archive = archive.file,
-                    summary = archive.summary,
-                    senderName = DeviceInfo.senderName(getApplication()),
-                    onProgress = { percent ->
-                        val status = if (percent >= 100) {
-                            getString(R.string.upload_status_waiting)
-                        } else {
-                            getString(R.string.upload_status_sending)
-                        }
-                        _state.value = BackupUiState.Uploading(
-                            percent = percent.coerceIn(0, 100),
-                            status = status
-                        )
-                    },
-                    onStatus = { status ->
-                        val current = _state.value as? BackupUiState.Uploading
-                        _state.value = BackupUiState.Uploading(
-                            percent = current?.percent ?: 0,
-                            status = uploadStatusMessage(status)
-                        )
-                    }
-                )
-
-                val cleanupOk = cleanupArchive()
-                val title: String
-                val baseMessage: String
-                when (result) {
-                    is UploadResult.Success -> {
-                        title = getString(R.string.upload_success_title)
-                        baseMessage = getString(R.string.upload_success_message)
-                    }
-
-                    is UploadResult.Failure -> {
-                        title = getString(R.string.upload_failed_title)
-                        baseMessage = uploadFailureMessage(result)
-                    }
+                val report = sender.send(currentPlan) { progress ->
+                    _state.value = BackupUiState.Uploading(
+                        percent = progress.overallPercent.coerceIn(0, 100),
+                        message = uploadProgressMessage(progress)
+                    )
                 }
 
+                val cleanupOk = cleanupTemporaryFiles()
+                plan = null
                 _state.value = BackupUiState.Idle
                 sendEvent(
                     BackupUiEvent.Result(
-                        title,
-                        baseMessage + cleanupNote(cleanupOk)
+                        uploadResultTitle(report),
+                        uploadResultMessage(report) + cleanupNote(cleanupOk)
                     )
                 )
             } catch (e: CancellationException) {
                 withContext(NonCancellable) {
-                    val cleanupOk = cleanupArchive()
+                    val cleanupOk = cleanupTemporaryFiles()
+                    plan = null
                     _state.value = BackupUiState.Idle
                     sendEvent(
                         BackupUiEvent.Result(
                             getString(R.string.upload_cancelled_title),
-                            getString(R.string.upload_cancelled_message) + cleanupNote(cleanupOk)
+                            getString(R.string.upload_cancelled_message) +
+                                "\n\n" + getString(R.string.upload_partial_warning) +
+                                cleanupNote(cleanupOk)
                         )
                     )
                 }
                 throw e
             } catch (e: Exception) {
-                val cleanupOk = cleanupArchive()
+                val cleanupOk = cleanupTemporaryFiles()
+                plan = null
                 _state.value = BackupUiState.Idle
                 sendEvent(
                     BackupUiEvent.Result(
@@ -276,89 +248,134 @@ class BackupViewModel(application: Application) : AndroidViewModel(application) 
     override fun onCleared() {
         preparationJob?.cancel()
         uploadJob?.cancel()
-        cleanupArchive()
+        sender.clearTemporaryFiles()
+        plan = null
         super.onCleared()
     }
 
-    /**
-     * Deletes the current archive. Returns true when no file remains (including
-     * the case where there was nothing to delete).
-     */
-    private fun cleanupArchive(): Boolean {
-        val archive = preparedArchive ?: return true
-        preparedArchive = null
-        archive.file.delete()
-        return !archive.file.exists()
+    private fun cleanupTemporaryFiles(): Boolean {
+        return runCatching {
+            sender.clearTemporaryFiles()
+            true
+        }.getOrElse { false }
     }
 
     private fun preparationMessage(progress: PreparationProgress): String =
         when (progress.stage) {
             PreparationStage.STARTING -> getString(R.string.progress_starting)
             PreparationStage.QUERYING_PHOTOS -> getString(R.string.progress_finding_photos)
-            PreparationStage.ADDING_PHOTOS -> getString(
-                R.string.progress_adding_photos,
-                progress.current,
-                progress.total
-            )
-
             PreparationStage.READING_CONTACTS -> getString(R.string.progress_reading_contacts)
-            PreparationStage.ADDING_CONTACTS -> getString(R.string.progress_adding_contacts)
-            PreparationStage.FINALIZING -> getString(R.string.progress_finalizing)
+            PreparationStage.FINALIZING -> getString(R.string.progress_preparing_done)
         }
 
-    private fun uploadStatusMessage(status: UploadStatus): String = when (status) {
-        UploadStatus.Sending -> getString(R.string.upload_status_sending)
-        is UploadStatus.RateLimited -> getString(
-            R.string.upload_status_rate_limited,
-            status.retryAfterSeconds
+    private fun uploadProgressMessage(progress: UploadProgress): String {
+        val item = getString(
+            R.string.upload_item_counter,
+            progress.itemIndex,
+            progress.itemCount
         )
+        val phase = when (progress.phase) {
+            UploadPhase.DEVICE_INFO -> getString(R.string.upload_phase_device_info)
+            UploadPhase.CONTACTS -> getString(R.string.upload_phase_contacts)
+            UploadPhase.PHOTOS -> getString(R.string.upload_phase_photos)
+        }
+        val note = when (progress.note) {
+            UploadNote.SENDING -> getString(R.string.upload_status_sending)
+            UploadNote.WAITING_CONFIRMATION -> getString(R.string.upload_status_waiting)
+            UploadNote.COMPRESSING -> getString(R.string.upload_status_compressing)
+            UploadNote.RETRYING -> getString(R.string.upload_status_retrying)
+            UploadNote.RATE_LIMITED -> getString(
+                R.string.upload_status_rate_limited,
+                progress.retryAfterSeconds ?: 0L
+            )
+        }
+        return "$phase · $item\n$note"
     }
 
-    private fun uploadFailureMessage(failure: UploadResult.Failure): String =
-        when (failure.kind) {
-            UploadFailureKind.INVALID_CONFIGURATION ->
-                getString(R.string.upload_error_invalid_config)
+    private fun uploadResultTitle(report: UploadReport): String = when {
+        !report.anythingDelivered -> getString(R.string.upload_failed_title)
+        report.aborted || report.photosSkipped > 0 -> getString(R.string.upload_partial_title)
+        else -> getString(R.string.upload_success_title)
+    }
 
-            UploadFailureKind.ARCHIVE_UNAVAILABLE ->
-                getString(R.string.upload_error_archive_unavailable)
+    private fun uploadResultMessage(report: UploadReport): String = buildString {
+        append(
+            if (report.anythingDelivered) {
+                getString(R.string.upload_result_delivered_heading)
+            } else {
+                getString(R.string.upload_result_nothing_delivered)
+            }
+        )
+        append('\n')
 
-            UploadFailureKind.CONNECTIVITY -> getString(R.string.upload_error_connectivity)
-            UploadFailureKind.TIMEOUT -> getString(R.string.upload_error_timeout)
-            UploadFailureKind.TLS -> getString(R.string.upload_error_tls)
-            UploadFailureKind.NETWORK -> getString(R.string.upload_error_network)
-
-            UploadFailureKind.REDIRECT_REJECTED -> getString(
-                R.string.upload_error_redirect,
-                failure.httpStatusCode ?: 0
-            )
-
-            UploadFailureKind.UNAUTHORIZED,
-            UploadFailureKind.NOT_FOUND -> getString(
-                R.string.upload_error_webhook_rejected,
-                failure.httpStatusCode ?: 0
-            )
-
-            UploadFailureKind.PAYLOAD_TOO_LARGE -> getString(
-                R.string.upload_error_too_large,
-                failure.httpStatusCode ?: 0
-            )
-
-            UploadFailureKind.RATE_LIMITED -> failure.retryAfterSeconds?.let { seconds ->
-                getString(R.string.upload_error_rate_limited, seconds)
-            } ?: getString(R.string.upload_error_rate_limited_unknown)
-
-            UploadFailureKind.SERVER_ERROR -> getString(
-                R.string.upload_error_server,
-                failure.httpStatusCode ?: 0
-            )
-
-            UploadFailureKind.REJECTED -> getString(
-                R.string.upload_error_rejected,
-                failure.httpStatusCode ?: 0
-            )
-
-            UploadFailureKind.UNEXPECTED -> getString(R.string.upload_error_unexpected)
+        if (report.infoSent) {
+            append('\n')
+            append(getString(R.string.upload_result_device_info_sent))
         }
+
+        if (report.contactsIncluded) {
+            append('\n')
+            append(
+                if (report.contactsSent) {
+                    getString(R.string.upload_result_contacts_sent)
+                } else {
+                    getString(R.string.upload_result_contacts_failed)
+                }
+            )
+        }
+
+        if (report.photosAttempted > 0) {
+            append('\n')
+            append(
+                getString(
+                    R.string.upload_result_photos,
+                    report.photosSent,
+                    report.photosAttempted
+                )
+            )
+            if (report.photosCompressedSent > 0) {
+                append(' ')
+                append(
+                    getString(
+                        R.string.upload_result_compressed,
+                        report.photosCompressedSent
+                    )
+                )
+            }
+            if (report.photosSkipped > 0) {
+                append(' ')
+                append(getString(R.string.upload_result_skipped, report.photosSkipped))
+            }
+        }
+
+        if (report.aborted) {
+            append("\n\n")
+            append(getString(R.string.upload_result_aborted))
+        }
+
+        if (!report.anythingDelivered) {
+            append("\n\n")
+            append(uploadFailureMessage(report.abortReason))
+        }
+    }
+
+    private fun uploadFailureMessage(kind: UploadFailureKind?): String = when (kind) {
+        null -> getString(R.string.upload_error_unexpected)
+        UploadFailureKind.INVALID_CONFIGURATION -> getString(R.string.upload_error_invalid_config)
+        UploadFailureKind.CONNECTIVITY -> getString(R.string.upload_error_connectivity)
+        UploadFailureKind.TIMEOUT -> getString(R.string.upload_error_timeout)
+        UploadFailureKind.TLS -> getString(R.string.upload_error_tls)
+        UploadFailureKind.NETWORK -> getString(R.string.upload_error_network)
+        UploadFailureKind.REDIRECT_REJECTED -> getString(R.string.upload_error_redirect)
+        UploadFailureKind.UNAUTHORIZED,
+        UploadFailureKind.NOT_FOUND -> getString(R.string.upload_error_webhook_rejected)
+
+        UploadFailureKind.PAYLOAD_TOO_LARGE -> getString(R.string.upload_error_too_large)
+        UploadFailureKind.RATE_LIMITED -> getString(R.string.upload_error_rate_limited)
+        UploadFailureKind.SERVER_ERROR -> getString(R.string.upload_error_server)
+        UploadFailureKind.REJECTED -> getString(R.string.upload_error_rejected)
+        UploadFailureKind.UNEXPECTED -> getString(R.string.upload_error_unexpected)
+    }
 
     private fun cleanupNote(cleanupSucceeded: Boolean): String {
         val note = if (cleanupSucceeded) {

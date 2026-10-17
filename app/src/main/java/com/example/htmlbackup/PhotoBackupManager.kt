@@ -5,12 +5,7 @@ import android.content.Context
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
-import java.io.IOException
 import java.util.Locale
-import java.util.zip.ZipEntry
-import java.util.zip.ZipOutputStream
 
 /** One image exposed by MediaStore that this app is allowed to read. */
 data class PhotoItem(
@@ -20,15 +15,7 @@ data class PhotoItem(
     val sizeBytes: Long
 )
 
-/** Outcome of adding the accessible photos to the open ZIP stream. */
-data class PhotoWriteResult(
-    val writtenCount: Int,
-    val writtenBytes: Long,
-    val skippedCount: Int,
-    val sampleEntryNames: List<String>
-)
-
-/** Pure naming rules, kept separate so they can be unit tested off-device. */
+/** Naming rules for uploads. Kept pure so they can be unit tested off-device. */
 internal object PhotoFormats {
     val supportedMimeTypes: List<String> = listOf(
         "image/jpeg",
@@ -43,19 +30,32 @@ internal object PhotoFormats {
         else -> "bin"
     }
 
-    /**
-     * Builds a collision-free entry inside photos/. The original display name
-     * is sanitized, and the extension always follows the validated MIME type.
-     */
-    fun zipEntryName(index: Int, displayName: String?, mimeType: String): String {
-        val baseName = sanitizeBaseName(displayName).ifBlank { "photo" }
-        return String.format(
+    /** Attachment name, for example `00042_holiday_photo.jpg`. */
+    fun uploadFileName(index: Int, displayName: String?, mimeType: String): String =
+        String.format(
             Locale.ROOT,
-            "photos/%05d_%s.%s",
-            index,
-            baseName,
+            "%s.%s",
+            baseName(index, displayName),
             extensionFor(mimeType)
         )
+
+    /** Attachment name for a re-encoded photo, always JPEG. */
+    fun compressedFileName(
+        index: Int,
+        displayName: String?,
+        quarterResolution: Boolean = false
+    ): String {
+        val suffix = if (quarterResolution) {
+            "-compressed-4x.jpg"
+        } else {
+            "-compressed.jpg"
+        }
+        return String.format(Locale.ROOT, "%s%s", baseName(index, displayName), suffix)
+    }
+
+    private fun baseName(index: Int, displayName: String?): String {
+        val sanitized = sanitizeBaseName(displayName).ifBlank { "photo" }
+        return String.format(Locale.ROOT, "%05d_%s", index, sanitized)
     }
 
     private fun sanitizeBaseName(displayName: String?): String {
@@ -82,11 +82,11 @@ internal object PhotoFormats {
 }
 
 /**
- * Discovers accessible images through MediaStore and streams them into a ZIP.
+ * Discovers accessible images through MediaStore.
  *
- * The implementation intentionally does not enumerate the filesystem and does
- * not require per-photo selection: Android exposes exactly the images the user
- * authorized (all images, or only selected photos on Android 14+).
+ * No filesystem walking and no per-photo selection: Android exposes exactly the
+ * images the user authorized (full library or selected photos on Android 14+).
+ * Images stay in place and are streamed directly to the uploader.
  */
 class PhotoBackupManager(private val context: Context) {
 
@@ -159,76 +159,5 @@ class PhotoBackupManager(private val context: Context) {
         )
 
         return items
-    }
-
-    /**
-     * Streams photo bytes directly from MediaStore to the ZIP stream. Nothing
-     * is decoded into a bitmap and no full-size byte array is held in memory.
-     */
-    suspend fun writePhotosToZip(
-        zipOut: ZipOutputStream,
-        photos: List<PhotoItem>,
-        onProgress: (completed: Int, total: Int) -> Unit
-    ): PhotoWriteResult {
-        var writtenCount = 0
-        var writtenBytes = 0L
-        var skippedCount = 0
-        val sampleEntries = ArrayList<String>(MAX_SAMPLE_ENTRIES)
-        val buffer = ByteArray(COPY_BUFFER_SIZE)
-
-        onProgress(0, photos.size)
-
-        photos.forEachIndexed { index, photo ->
-            currentCoroutineContext().ensureActive()
-
-            val entryName = PhotoFormats.zipEntryName(index + 1, photo.displayName, photo.mimeType)
-            val input = try {
-                context.contentResolver.openInputStream(photo.uri)
-            } catch (_: SecurityException) {
-                null
-            } catch (_: IOException) {
-                null
-            }
-
-            if (input == null) {
-                skippedCount++
-                onProgress(index + 1, photos.size)
-                return@forEachIndexed
-            }
-
-            input.use { stream ->
-                zipOut.putNextEntry(ZipEntry(entryName))
-                var entryBytes = 0L
-                while (true) {
-                    currentCoroutineContext().ensureActive()
-                    val read = stream.read(buffer)
-                    if (read == -1) {
-                        break
-                    }
-                    zipOut.write(buffer, 0, read)
-                    entryBytes += read
-                }
-                zipOut.closeEntry()
-                writtenBytes += entryBytes
-                writtenCount++
-                if (sampleEntries.size < MAX_SAMPLE_ENTRIES) {
-                    sampleEntries += entryName
-                }
-            }
-
-            onProgress(index + 1, photos.size)
-        }
-
-        return PhotoWriteResult(
-            writtenCount = writtenCount,
-            writtenBytes = writtenBytes,
-            skippedCount = skippedCount,
-            sampleEntryNames = sampleEntries
-        )
-    }
-
-    private companion object {
-        const val COPY_BUFFER_SIZE = 64 * 1024
-        const val MAX_SAMPLE_ENTRIES = 3
     }
 }

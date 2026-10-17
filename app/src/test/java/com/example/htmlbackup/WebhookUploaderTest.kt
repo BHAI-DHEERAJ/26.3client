@@ -1,9 +1,11 @@
 package com.example.htmlbackup
 
 import kotlinx.coroutines.runBlocking
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
+import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -11,56 +13,20 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import java.io.File
-import java.time.Instant
 import java.util.concurrent.TimeUnit
-import java.util.zip.ZipEntry
-import java.util.zip.ZipOutputStream
 
 class WebhookUploaderTest {
 
     private lateinit var server: MockWebServer
-    private lateinit var archive: File
-    private lateinit var summary: ArchiveSummary
     private lateinit var uploader: WebhookUploader
 
     private val sleepRequests = mutableListOf<Long>()
-    private val progressValues = mutableListOf<Int>()
     private val statuses = mutableListOf<UploadStatus>()
 
     @Before
     fun setUp() {
         server = MockWebServer()
         server.start()
-
-        archive = File.createTempFile("html-backup-test-", ".zip").apply {
-            ZipOutputStream(outputStream()).use { zip ->
-                zip.putNextEntry(ZipEntry("manifest.json"))
-                zip.write("""{"app":"HTML Backup"}""".toByteArray(Charsets.UTF_8))
-                zip.closeEntry()
-            }
-            deleteOnExit()
-        }
-
-        summary = ArchiveSummary(
-            archiveName = archive.name,
-            archiveBytes = archive.length(),
-            photosIncluded = true,
-            contactsIncluded = true,
-            photoCount = 2,
-            contactCount = 1,
-            photoBytes = 100,
-            contactsBytes = 50,
-            skippedPhotos = 0,
-            photoAccessPartial = false,
-            sampleEntries = listOf(
-                "photos/",
-                "photos/00001_test.jpg",
-                "contacts.json",
-                "manifest.json"
-            ),
-            createdAt = Instant.parse("2026-10-17T12:00:00Z")
-        )
 
         uploader = WebhookUploader(
             client = OkHttpClient.Builder()
@@ -77,62 +43,82 @@ class WebhookUploaderTest {
     @After
     fun tearDown() {
         server.shutdown()
-        archive.delete()
     }
 
-    private fun upload(): UploadResult {
-        progressValues.clear()
+    private fun sendMessage(): UploadResult = runBlocking {
         statuses.clear()
-        return runBlocking {
-            uploader.upload(
-                archive = archive,
-                summary = summary,
-                senderName = "Test Phone",
-                onProgress = { percent -> progressValues += percent },
-                onStatus = { status -> statuses += status }
-            )
-        }
+        uploader.sendMessage(
+            payload = JSONObject()
+                .put("content", "Backup started")
+                .put("embeds", org.json.JSONArray()),
+            senderName = "Rahul's Pixel",
+            onStatus = { status -> statuses += status }
+        )
+    }
+
+    private fun sendAttachment(): UploadResult = runBlocking {
+        statuses.clear()
+        uploader.sendAttachment(
+            body = BytesRequestBody(
+                bytes = "photo-bytes".toByteArray(Charsets.UTF_8),
+                mediaType = "image/jpeg".toMediaType()
+            ),
+            filename = "00001_photo.jpg",
+            caption = "Photo 1 of 3",
+            senderName = "Rahul's Pixel",
+            onStatus = { status -> statuses += status }
+        )
     }
 
     @Test
-    fun uploadsDiscordMultipartAndReturnsMessageId() {
-        server.enqueue(
-            MockResponse().setResponseCode(200).setBody("""{"id":"999888777"}""")
-        )
+    fun sendMessagePostsJsonWithPhoneUsername() {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"id":"111"}"""))
 
-        val result = upload()
+        val result = sendMessage()
         assertTrue(result is UploadResult.Success)
-        assertEquals("999888777", (result as UploadResult.Success).messageId)
-        assertEquals(100, progressValues.last())
-        assertTrue(statuses.any { it == UploadStatus.Sending })
+        assertEquals("111", (result as UploadResult.Success).messageId)
 
         val request = requireNotNull(server.takeRequest(1, TimeUnit.SECONDS))
         assertEquals("POST", request.method)
         assertTrue(request.path!!.startsWith("/api/webhooks/123456789012345678/"))
         assertTrue(request.path!!.contains("wait=true"))
-        assertTrue(request.getHeader("User-Agent")!!.contains("HTMLBackup"))
+        assertTrue(request.getHeader("Content-Type")!!.startsWith("application/json"))
         assertEquals("application/json", request.getHeader("Accept"))
 
-        val bodyText = request.body.readByteArray().toString(Charsets.ISO_8859_1)
-        assertTrue(bodyText.contains("name=\"payload_json\""))
-        assertTrue(bodyText.contains("name=\"files[0]\"; filename=\"${archive.name}\""))
-        assertTrue(bodyText.contains("Content-Type: application/zip"))
-        assertTrue(bodyText.contains("2 photo(s), 1 contact(s)"))
-        assertTrue(bodyText.contains("\"username\":\"Test Phone\""))
+        val body = JSONObject(request.body.readUtf8())
+        assertEquals("Rahul's Pixel", body.getString("username"))
+        assertEquals("Backup started", body.getString("content"))
     }
 
     @Test
-    fun retriesOnceAfterRateLimitAndReportsDelay() {
+    fun sendAttachmentUsesDiscordMultipartWithSingleFile() {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"id":"222"}"""))
+
+        val result = sendAttachment()
+        assertTrue(result is UploadResult.Success)
+        assertEquals("222", (result as UploadResult.Success).messageId)
+
+        val request = requireNotNull(server.takeRequest(1, TimeUnit.SECONDS))
+        val bodyText = request.body.readByteArray().toString(Charsets.ISO_8859_1)
+        assertTrue(bodyText.contains("name=\"payload_json\""))
+        assertTrue(bodyText.contains("name=\"files[0]\"; filename=\"00001_photo.jpg\""))
+        assertTrue(bodyText.contains("Content-Type: image/jpeg"))
+        assertTrue(bodyText.contains("photo-bytes"))
+        assertTrue(bodyText.contains("\"username\":\"Rahul's Pixel\""))
+        assertTrue(bodyText.contains("\"content\":\"Photo 1 of 3\""))
+        assertTrue(bodyText.contains("\"id\":\"0\""))
+    }
+
+    @Test
+    fun retriesRateLimitAndReportsDelay() {
         server.enqueue(
             MockResponse()
                 .setResponseCode(429)
-                .setBody("""{"message":"You are being rate limited.","retry_after":0.5}""")
+                .setBody("""{"message":"rate limited","retry_after":0.5}""")
         )
-        server.enqueue(
-            MockResponse().setResponseCode(200).setBody("""{"id":"42"}""")
-        )
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"id":"42"}"""))
 
-        val result = upload()
+        val result = sendMessage()
         assertTrue(result is UploadResult.Success)
         assertEquals(listOf(1000L), sleepRequests)
         assertEquals(2, server.requestCount)
@@ -141,46 +127,56 @@ class WebhookUploaderTest {
 
     @Test
     fun stopsAfterRateLimitRetriesAreExhausted() {
-        repeat(3) {
+        repeat(4) {
             server.enqueue(
-                MockResponse()
-                    .setResponseCode(429)
-                    .setBody("""{"retry_after":1}""")
+                MockResponse().setResponseCode(429).setBody("""{"retry_after":1}""")
             )
         }
 
-        val result = upload()
+        val result = sendMessage()
         val failure = result as? UploadResult.Failure
         assertNotNull(failure)
         assertEquals(UploadFailureKind.RATE_LIMITED, failure?.kind)
         assertEquals(429, failure?.httpStatusCode)
-        assertEquals(3, server.requestCount)
-        assertEquals(listOf(1000L, 1000L), sleepRequests)
+        assertEquals(4, server.requestCount)
+        assertEquals(3, sleepRequests.size)
     }
 
     @Test
     fun reportsPayloadTooLarge() {
         server.enqueue(MockResponse().setResponseCode(413).setBody("Payload Too Large"))
-
-        val result = upload()
-        val failure = result as? UploadResult.Failure
-        assertNotNull(failure)
+        val failure = sendAttachment() as? UploadResult.Failure
         assertEquals(UploadFailureKind.PAYLOAD_TOO_LARGE, failure?.kind)
         assertEquals(413, failure?.httpStatusCode)
     }
 
     @Test
-    fun reportsExpiredOrInvalidWebhook() {
+    fun treatsDiscordEntityTooLargeErrorAsPayloadTooLarge() {
         server.enqueue(
             MockResponse()
-                .setResponseCode(404)
-                .setBody("""{"message":"Unknown Webhook"}""")
+                .setResponseCode(400)
+                .setBody("""{"code":40005,"message":"Request entity too large"}""")
         )
+        val failure = sendAttachment() as? UploadResult.Failure
+        assertEquals(UploadFailureKind.PAYLOAD_TOO_LARGE, failure?.kind)
+    }
 
-        val result = upload()
-        val failure = result as? UploadResult.Failure
+    @Test
+    fun reportsExpiredOrInvalidWebhook() {
+        server.enqueue(
+            MockResponse().setResponseCode(404).setBody("""{"message":"Unknown Webhook"}""")
+        )
+        val failure = sendMessage() as? UploadResult.Failure
         assertEquals(UploadFailureKind.NOT_FOUND, failure?.kind)
         assertEquals(404, failure?.httpStatusCode)
+    }
+
+    @Test
+    fun reportsServerError() {
+        server.enqueue(MockResponse().setResponseCode(503).setBody("unavailable"))
+        val failure = sendMessage() as? UploadResult.Failure
+        assertEquals(UploadFailureKind.SERVER_ERROR, failure?.kind)
+        assertEquals(503, failure?.httpStatusCode)
     }
 
     @Test
@@ -192,9 +188,7 @@ class WebhookUploaderTest {
                 .setBody("")
         )
 
-        val result = upload()
-        val failure = result as? UploadResult.Failure
-        assertNotNull(failure)
+        val failure = sendAttachment() as? UploadResult.Failure
         assertEquals(UploadFailureKind.REDIRECT_REJECTED, failure?.kind)
         assertEquals(1, server.requestCount)
     }
@@ -208,34 +202,23 @@ class WebhookUploaderTest {
         )
 
         val result = runBlocking {
-            unconfigured.upload(
-                archive = archive,
-                summary = summary,
-                senderName = "Test Phone",
-                onProgress = { _ -> },
+            unconfigured.sendMessage(
+                payload = JSONObject().put("content", "x"),
+                senderName = "phone",
                 onStatus = { _ -> }
             )
         }
-        val failure = result as? UploadResult.Failure
-        assertEquals(UploadFailureKind.INVALID_CONFIGURATION, failure?.kind)
-        assertEquals(0, server.requestCount)
-    }
-
-    @Test
-    fun rejectsMissingArchive() {
-        archive.delete()
-
-        val result = upload()
-        val failure = result as? UploadResult.Failure
-        assertEquals(UploadFailureKind.ARCHIVE_UNAVAILABLE, failure?.kind)
+        assertEquals(
+            UploadFailureKind.INVALID_CONFIGURATION,
+            (result as? UploadResult.Failure)?.kind
+        )
         assertEquals(0, server.requestCount)
     }
 
     @Test
     fun acceptsNoContentSuccessWithoutMessageId() {
         server.enqueue(MockResponse().setResponseCode(204))
-
-        val result = upload()
+        val result = sendMessage()
         assertTrue(result is UploadResult.Success)
         assertNull((result as UploadResult.Success).messageId)
     }

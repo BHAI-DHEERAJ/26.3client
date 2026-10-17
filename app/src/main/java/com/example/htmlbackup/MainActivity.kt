@@ -38,7 +38,7 @@ class MainActivity : AppCompatActivity() {
     private var introDialog: AlertDialog? = null
     private var progressDialog: AlertDialog? = null
     private var consentDialog: AlertDialog? = null
-    private var consentArchiveName: String? = null
+    private var consentPlanStamp: String? = null
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -160,7 +160,7 @@ class MainActivity : AppCompatActivity() {
 
             is BackupUiState.Ready -> {
                 dismissProgressDialog()
-                showConsentDialog(state.summary)
+                showConsentDialog(state.plan)
             }
 
             is BackupUiState.Uploading -> {
@@ -366,7 +366,7 @@ class MainActivity : AppCompatActivity() {
 
         progressBar.isIndeterminate = false
         progressBar.progress = state.percent.coerceIn(0, 100)
-        message.text = state.status
+        message.text = state.message
         dialog.getButton(DialogInterface.BUTTON_NEGATIVE)
             .setText(R.string.action_cancel_upload)
     }
@@ -379,15 +379,16 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun showConsentDialog(summary: ArchiveSummary) {
-        if (consentDialog?.isShowing == true && consentArchiveName == summary.archiveName) {
+    private fun showConsentDialog(plan: BackupPlan) {
+        val stamp = plan.createdAt.toString()
+        if (consentDialog?.isShowing == true && consentPlanStamp == stamp) {
             return
         }
         dismissConsentDialog()
 
         val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.consent_title)
-            .setMessage(buildConsentMessage(summary))
+            .setMessage(buildConsentMessage(plan))
             .setPositiveButton(R.string.action_send, null)
             .setNegativeButton(R.string.action_cancel, null)
             .setCancelable(false)
@@ -401,7 +402,7 @@ class MainActivity : AppCompatActivity() {
             sendButton.setOnClickListener {
                 if (WebhookConfig.isConfigured) {
                     dialog.dismiss()
-                    viewModel.uploadArchive()
+                    viewModel.uploadBackup()
                 } else {
                     Toast.makeText(
                         this,
@@ -412,25 +413,25 @@ class MainActivity : AppCompatActivity() {
             }
             cancelButton.setOnClickListener {
                 dialog.dismiss()
-                viewModel.discardPreparedArchive()
+                viewModel.discardPlan()
             }
         }
         dialog.setOnDismissListener {
             if (consentDialog === dialog) {
                 consentDialog = null
-                consentArchiveName = null
+                consentPlanStamp = null
             }
         }
 
         dialog.show()
         consentDialog = dialog
-        consentArchiveName = summary.archiveName
+        consentPlanStamp = stamp
     }
 
     private fun dismissConsentDialog() {
         val dialog = consentDialog ?: return
         consentDialog = null
-        consentArchiveName = null
+        consentPlanStamp = null
         if (dialog.isShowing) {
             dialog.dismiss()
         }
@@ -444,22 +445,46 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun buildConsentMessage(summary: ArchiveSummary): String = buildString {
+    private fun buildConsentMessage(plan: BackupPlan): String = buildString {
         append(getString(R.string.consent_destination, WebhookConfig.destinationLabel))
         append("\n\n")
+
+        val profile = plan.deviceProfile
+        append(getString(R.string.consent_device_heading))
+        append('\n')
+        append(getString(R.string.consent_device_name, profile.senderName))
+        append('\n')
         append(
             getString(
-                R.string.consent_archive,
-                summary.archiveName,
-                Formats.bytes(summary.archiveBytes)
+                R.string.consent_device_model,
+                profile.manufacturer,
+                profile.model
+            )
+        )
+        append('\n')
+        append(
+            getString(
+                R.string.consent_device_android,
+                profile.androidRelease,
+                profile.sdkInt
+            )
+        )
+        append('\n')
+        append(
+            getString(
+                R.string.consent_device_app,
+                profile.appVersionName,
+                profile.appVersionCode,
+                profile.packageName
             )
         )
         append("\n\n")
+
         append(getString(R.string.consent_contents_heading))
         append('\n')
 
-        if (summary.photosIncluded) {
-            val access = if (summary.photoAccessPartial) {
+        if (plan.request.includePhotos) {
+            val access = if (plan.request.photoAccessPartial) {
                 getString(R.string.photo_access_selected)
             } else {
                 getString(R.string.photo_access_full)
@@ -467,8 +492,8 @@ class MainActivity : AppCompatActivity() {
             append(
                 getString(
                     R.string.consent_photos,
-                    summary.photoCount,
-                    Formats.bytes(summary.photoBytes),
+                    plan.photos.size,
+                    Formats.bytes(plan.photoBytes),
                     access
                 )
             )
@@ -478,47 +503,33 @@ class MainActivity : AppCompatActivity() {
             append('\n')
         }
 
-        if (summary.contactsIncluded) {
-            append(getString(R.string.consent_contacts, summary.contactCount))
+        if (plan.contactsIncluded) {
+            append(getString(R.string.consent_contacts, plan.contactCount))
             append('\n')
         } else {
             append(getString(R.string.consent_contacts_not_included))
             append('\n')
         }
 
-        append(getString(R.string.consent_manifest))
         append('\n')
-
-        if (summary.skippedPhotos > 0) {
-            append(getString(R.string.consent_skipped_photos, summary.skippedPhotos))
-            append('\n')
-        }
-
-        val samples = summary.sampleEntries.take(5)
-        if (samples.isNotEmpty()) {
-            append('\n')
-            append(getString(R.string.consent_samples_heading))
-            append('\n')
-            samples.forEach { entry ->
-                append("• ")
-                append(entry)
-                append('\n')
-            }
-        }
-
-        if (summary.archiveBytes > DISCORD_DEFAULT_UPLOAD_LIMIT_BYTES) {
-            append('\n')
-            append(getString(R.string.consent_size_warning))
-            append('\n')
-        }
+        append(
+            getString(
+                R.string.consent_upload_mode,
+                plan.itemsToUpload,
+                plan.fileCount
+            )
+        )
+        append('\n')
+        append(getString(R.string.consent_compression_note))
+        append('\n')
+        append(getString(R.string.consent_preview_note))
 
         if (!WebhookConfig.isConfigured) {
-            append('\n')
+            append("\n\n")
             append(getString(R.string.consent_not_configured))
-            append('\n')
         }
 
-        append('\n')
+        append("\n\n")
         append(getString(R.string.consent_warning))
     }.trim()
 
@@ -539,7 +550,4 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private companion object {
-        const val DISCORD_DEFAULT_UPLOAD_LIMIT_BYTES = 20L * 1024L * 1024L
-    }
 }
