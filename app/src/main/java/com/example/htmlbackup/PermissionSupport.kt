@@ -24,8 +24,11 @@ data class GrantedAccess(
     val hasPhotos: Boolean
         get() = photos.isGranted
 
+    val hasContacts: Boolean
+        get() = contacts
+
     val hasAny: Boolean
-        get() = hasPhotos || contacts
+        get() = hasPhotos || hasContacts
 }
 
 /**
